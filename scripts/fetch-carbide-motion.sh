@@ -11,6 +11,9 @@ CARBIDE_MOTION_REPO_URL="${CARBIDE_MOTION_REPO_URL:-https://motion-pi.us-east-1.
 CARBIDE_MOTION_DEB_DIR="${CARBIDE_MOTION_DEB_DIR:-deb}"
 CARBIDE_MOTION_BUILD="${CARBIDE_MOTION_BUILD:-}"
 CARBIDE_MOTION_ARCH="${CARBIDE_MOTION_ARCH:-armhf}"
+# Overridable so the ar/tar fallback can be exercised on a host that has
+# dpkg-deb, which is the only place that path has ever been wrong.
+CM_DPKG_DEB="${CM_DPKG_DEB:-dpkg-deb}"
 
 die() { printf 'fetch-carbide-motion: %s\n' "$*" >&2; exit 1; }
 log() { printf 'fetch-carbide-motion: %s\n' "$*" >&2; }
@@ -51,18 +54,18 @@ cm_list_remote() {
 # A wrong-architecture package installs cleanly and then fails to launch, so the
 # check belongs here rather than at first boot.
 cm_deb_field() {
-  local deb="$1" field="$2"
-  if command -v dpkg-deb >/dev/null 2>&1; then
-    dpkg-deb --field "$deb" "$field" 2>/dev/null
+  local deb="$1" field="$2" control
+  if command -v "$CM_DPKG_DEB" >/dev/null 2>&1; then
+    "$CM_DPKG_DEB" --field "$deb" "$field" 2>/dev/null
     return
   fi
   # dpkg-deb is absent when the build host is not Debian; ar and tar are not.
-  local tmp
-  tmp="$(mktemp -d)"
-  ( cd "$tmp" && ar x "$deb" control.tar.xz >/dev/null 2>&1 \
-      && tar -xJf control.tar.xz >/dev/null 2>&1 ) || { rm -rf "$tmp"; return 1; }
-  awk -v f="$field:" '$1 == f { $1 = ""; sub(/^ /, ""); print }' "$tmp/control" 2>/dev/null
-  rm -rf "$tmp"
+  # Streamed rather than extracted, so a relative path stays valid.
+  control="$(ar p "$deb" control.tar.xz 2>/dev/null | tar -xJO ./control 2>/dev/null)"
+  [ -n "$control" ] \
+    || control="$(ar p "$deb" control.tar.xz 2>/dev/null | tar -xJO control 2>/dev/null)"
+  printf '%s\n' "$control" \
+    | awk -v f="$field:" '$1 == f { $1 = ""; sub(/^ /, ""); print }'
 }
 
 cm_verify_deb() {

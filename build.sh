@@ -28,11 +28,14 @@ stage_carbide_motion() {
   export CARBIDE_MOTION_BUILD CARBIDE_MOTION_DEB_DIR
   deb="$(./scripts/fetch-carbide-motion.sh "$CARBIDE_MOTION_DEB_DIR")" \
     || die "could not obtain the Carbide Motion package"
+  # git does not track empty directories, so a clean clone has no files/ here.
+  install -d "$STAGE_SRC/01-carbide-motion/files"
   install -m 644 "$deb" "$STAGE_SRC/01-carbide-motion/files/carbidemotion.deb"
   log "staged $deb"
 }
 
 stage_config_template() {
+  install -d "$STAGE_SRC/07-firstboot/files"
   install -m 644 config/kiosk.conf.example \
     "$STAGE_SRC/07-firstboot/files/kiosk.conf.example"
 }
@@ -89,12 +92,17 @@ collect_output() {
 }
 
 main() {
-  require_docker
+  # Staging touches no containers, so it stays runnable without a daemon.
+  [ "${CARBIDE_STAGE_ONLY:-0}" = "1" ] || require_docker
   stage_carbide_motion
   stage_config_template
   fetch_pigen
   stage_into_pigen
   write_pigen_config
+  if [ "${CARBIDE_STAGE_ONLY:-0}" = "1" ]; then
+    log "staging complete; CARBIDE_STAGE_ONLY is set, not building"
+    return 0
+  fi
   log "starting pi-gen build (this takes a while)"
   ( cd "$PIGEN_DIR" && ./build-docker.sh )
   collect_output

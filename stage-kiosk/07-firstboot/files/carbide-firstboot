@@ -73,11 +73,23 @@ mount_data_partition() {
 }
 
 enable_readonly_root() {
-  # raspi-config builds the overlay initramfs and points config.txt at it.
+  local cmdline=/boot/firmware/cmdline.txt
+
+  # Order matters: enable_bootro refuses to edit fstab once the overlay is
+  # live, so the boot partition is marked read-only first.
+  raspi-config nonint enable_bootro \
+    || kiosk_die "could not mark the boot partition read-only"
+
+  # raspi-config builds the overlay initramfs, points config.txt at it, and
+  # adds overlayroot=tmpfs to the kernel command line.
   raspi-config nonint enable_overlayfs || kiosk_die "could not enable overlayfs"
-  # The boot partition holds kiosk.conf and must not be writable at runtime.
-  raspi-config nonint do_bootro 0 2>/dev/null || \
-    sed -i -E 's|(\s/boot/firmware\s+vfat\s+)defaults|\1ro,defaults|' /etc/fstab
+
+  # The read-only root is the whole point of this image. A silently writable
+  # root that looks protected is the one outcome worth refusing to boot into.
+  [ -r "$cmdline" ] || kiosk_die "$cmdline is missing; cannot confirm the overlay"
+  grep -q 'overlayroot=tmpfs' "$cmdline" \
+    || kiosk_die "overlayfs did not take effect; refusing to continue with a writable root"
+
   kiosk_log "root filesystem will be read-only after reboot"
 }
 

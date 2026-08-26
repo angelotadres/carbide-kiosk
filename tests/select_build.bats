@@ -78,3 +78,64 @@ setup() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"unreachable"* ]]
 }
+
+# Build a minimal but structurally real .deb, so package inspection is tested
+# against the ar/tar layout rather than a stub.
+make_deb() {
+  local out="$1" arch="$2" build="$BATS_TEST_TMPDIR/mk"
+  rm -rf "$build"; mkdir -p "$build"
+  printf 'Package: carbidemotion\nVersion: 6.0-654\nArchitecture: %s\n' "$arch" \
+    > "$build/control"
+  : > "$build/placeholder"
+  (
+    cd "$build"
+    tar -cJf control.tar.xz ./control
+    tar -cJf data.tar.xz ./placeholder
+    printf '2.0\n' > debian-binary
+    # rcS, not rc: Apple's ar builds a Mach-O symbol table with plain rc and
+    # the result is not readable as a .deb.
+    ar rcS "$out" debian-binary control.tar.xz data.tar.xz
+  )
+}
+
+@test "package fields are read through the ar fallback, from a relative path" {
+  command -v ar >/dev/null || skip "ar is not installed"
+  command -v xz >/dev/null || skip "xz is not installed"
+  cd "$BATS_TEST_TMPDIR"
+  mkdir -p deb
+  make_deb "$BATS_TEST_TMPDIR/deb/carbidemotion-654.deb" armhf
+  # Force the fallback even where dpkg-deb exists; cd-ing away from a
+  # relative path is what broke it.
+  CM_DPKG_DEB=no-such-dpkg-deb
+  run cm_deb_field deb/carbidemotion-654.deb Architecture
+  [ "$status" -eq 0 ]
+  [ "$output" = "armhf" ]
+}
+
+@test "both inspection paths agree on architecture" {
+  command -v ar >/dev/null || skip "ar is not installed"
+  command -v xz >/dev/null || skip "xz is not installed"
+  command -v dpkg-deb >/dev/null || skip "dpkg-deb is not installed"
+  make_deb "$BATS_TEST_TMPDIR/pkg.deb" armhf
+  local via_dpkg via_ar
+  via_dpkg="$(cm_deb_field "$BATS_TEST_TMPDIR/pkg.deb" Architecture)"
+  CM_DPKG_DEB=no-such-dpkg-deb
+  via_ar="$(cm_deb_field "$BATS_TEST_TMPDIR/pkg.deb" Architecture)"
+  [ "$via_dpkg" = "armhf" ]
+  [ "$via_ar" = "armhf" ]
+}
+
+@test "a wrong-architecture package is rejected, not installed" {
+  command -v ar >/dev/null || skip "ar is not installed"
+  command -v xz >/dev/null || skip "xz is not installed"
+  make_deb "$BATS_TEST_TMPDIR/arm64.deb" arm64
+  run cm_verify_deb "$BATS_TEST_TMPDIR/arm64.deb"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"arm64"* ]]
+}
+
+@test "an empty file is not mistaken for a package" {
+  : > "$BATS_TEST_TMPDIR/empty.deb"
+  run cm_verify_deb "$BATS_TEST_TMPDIR/empty.deb"
+  [ "$status" -ne 0 ]
+}
