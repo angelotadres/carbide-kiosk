@@ -1,44 +1,75 @@
 #!/bin/bash
 # Text the screensaver displays. Walking up to an idle machine, the useful
-# facts are where to send files and whether the Shapeoko is plugged in.
+# facts are where to send files, whether the Shapeoko is plugged in, and
+# which network the thing is actually on.
 #
-# Ends with a sleep on purpose. phosphor re-runs this program whenever it
-# exits, so returning immediately makes the text retype and scroll forever.
-# Holding, then exiting, gives one clean screen that refreshes with live data.
+# Runs forever and pads each frame to a full screen, so frames scroll off
+# cleanly instead of two half frames sharing the display.
 set -uo pipefail
 
 CARBIDE_KIOSK_LIB="${CARBIDE_KIOSK_LIB:-/usr/local/lib/carbide-kiosk}"
 # shellcheck source=../../02-kiosk-session/files/usr/local/lib/carbide-kiosk/common.sh
 . "$CARBIDE_KIOSK_LIB/common.sh" 2>/dev/null || true
 
-host="$(hostname)"
-share="$(kiosk_get samba_share_name gcode 2>/dev/null || echo gcode)"
-message="$(kiosk_get screensaver_message 2>/dev/null || true)"
-refresh="$(kiosk_get screensaver_refresh_seconds 60 2>/dev/null || echo 60)"
-case "$refresh" in ''|*[!0-9]*) refresh=60 ;; esac
-ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+scale="$(kiosk_get screensaver_text_size 7 2>/dev/null || echo 7)"
+pause="$(kiosk_get screensaver_refresh_seconds 20 2>/dev/null || echo 20)"
+case "$scale" in ''|*[!0-9]*) scale=7 ;; esac
+case "$pause" in ''|*[!0-9]*) pause=20 ;; esac
 
-printf '\033[H\033[2J'
-printf '%s\n\n' "${message:-$host}"
-printf '  Drop G-code here\n'
-printf '    smb://%s.local/%s\n' "$host" "$share"
-[ -n "$ip" ] && printf '    smb://%s/%s\n' "$ip" "$share"
-printf '\n'
+height="$(xdpyinfo 2>/dev/null | awk '/dimensions:/ {split($2,d,"x"); print d[2]; exit}')"
+[ -n "$height" ] || height=1200
+rows=$(( height / (10 * scale) ))
+[ "$rows" -lt 8 ] && rows=8
 
-# "Machine" rather than "Shapeoko": the heading above is often the hostname
-# shapeoko too, and the two lines read as duplicates.
-if [ -e /dev/shapeoko ]; then
-  printf '  Machine     connected\n'
-else
-  printf '  Machine     NOT CONNECTED\n'
+# Connection type only, never the network's name. This screen faces a
+# workshop and ends up in photographs; an SSID next to a location is worth
+# something to an attacker, while "wifi" is worth nothing. Answering "is this
+# thing connected" is the only job this line has.
+network() {
+  local ssid wired
+  ssid="$(nmcli -t -f ACTIVE,SSID dev wifi 2>/dev/null | grep '^yes' | cut -d: -f2 | head -1)"
+  if [ -n "$ssid" ]; then
+    printf 'wifi'
+    return
+  fi
+  wired="$(nmcli -t -f TYPE,STATE dev 2>/dev/null | grep '^ethernet:connected' | head -1)"
+  if [ -n "$wired" ]; then printf 'wired'; else printf 'not connected'; fi
+}
+
+frame() {
+  local host share message ip
+  host="$(hostname)"
+  share="$(kiosk_get samba_share_name gcode 2>/dev/null || echo gcode)"
+  message="$(kiosk_get screensaver_message 2>/dev/null || true)"
+  ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+
+  printf '%s\n\n' "${message:-$host}"
+  printf '  Drop G-code here\n'
+  printf '    smb://%s.local/%s\n' "$host" "$share"
+  [ -n "$ip" ] && printf '    smb://%s/%s\n' "$ip" "$share"
+  printf '\n'
+  if [ -e /dev/shapeoko ]; then
+    printf '  Machine     connected\n'
+  else
+    printf '  Machine     NOT CONNECTED\n'
+  fi
+  if systemctl is-active --quiet carbide-kiosk.service; then
+    printf '  Controller  ready\n'
+  else
+    printf '  Controller  stopped\n'
+  fi
+  printf '  Network     %s\n' "$(network)"
+  printf '  Free space  %s\n' "$(df -h /data 2>/dev/null | awk 'NR==2 {print $4}')"
+  printf '\n  %s\n' "$(date '+%H:%M  %a %d %b')"
+  printf '\n  touch the screen to wake\n'
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  while :; do
+    body="$(frame)"
+    printf '%s\n' "$body"
+    pad=$(( rows - $(printf '%s\n' "$body" | wc -l) ))
+    while [ "$pad" -gt 0 ]; do printf '\n'; pad=$(( pad - 1 )); done
+    sleep "$pause"
+  done
 fi
-if systemctl is-active --quiet carbide-kiosk.service; then
-  printf '  Controller  ready\n'
-else
-  printf '  Controller  stopped\n'
-fi
-printf '  Free space  %s\n' "$(df -h /data 2>/dev/null | awk 'NR==2 {print $4}')"
-printf '\n  %s\n' "$(date '+%H:%M  %a %d %b')"
-printf '\n  touch the screen to wake\n'
-
-sleep "$refresh"

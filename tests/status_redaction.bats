@@ -76,3 +76,34 @@ scrub() {
 @test "redact is actually defined, not silently absent" {
   declare -F redact
 }
+
+# The screensaver faces a workshop and ends up in photographs. It must report
+# that the machine is on a network without naming which one: an SSID beside a
+# location is worth something to an attacker, "wifi" is worth nothing.
+
+@test "the screensaver reports connection type, never the network name" {
+  source "$REPO_ROOT/stage-kiosk/08-status/files/carbide-kiosk-saver-text"
+  nmcli() { printf 'yes:VerySpecificHomeNetwork\n'; }
+  run network
+  [ "$output" = "wifi" ]
+  [[ "$output" != *"VerySpecificHomeNetwork"* ]]
+}
+
+@test "a wired machine says wired" {
+  source "$REPO_ROOT/stage-kiosk/08-status/files/carbide-kiosk-saver-text"
+  nmcli() {
+    case "$*" in
+      *"dev wifi"*) return 0 ;;
+      *) printf 'ethernet:connected\n' ;;
+    esac
+  }
+  run network
+  [ "$output" = "wired" ]
+}
+
+@test "an offline machine says so rather than guessing" {
+  source "$REPO_ROOT/stage-kiosk/08-status/files/carbide-kiosk-saver-text"
+  nmcli() { return 0; }
+  run network
+  [ "$output" = "not connected" ]
+}
