@@ -110,6 +110,14 @@ jobs:
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
           df -h /
+      - name: Install the armhf emulation pi-gen needs
+        # pi-gen's build-docker.sh checks for qemu-arm-static on PATH and a
+        # mounted binfmt_misc before it will cross-build an armhf rootfs.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static binfmt-support
+          qemu-arm-static --version | head -1
+          test -f /proc/sys/fs/binfmt_misc/register
       - name: Build
         run: ./build.sh
       - name: Checksum
