@@ -32,6 +32,28 @@ First boot takes a few minutes and ends in a reboot: the Pi creates its data par
 
 The share appears as `\\carbide-kiosk\gcode` on Windows and `smb://carbide-kiosk/gcode` on macOS. If macOS cannot find it by name, set `enable_mdns=1`.
 
+## What to expect
+
+**First boot** takes a few minutes and ends in a reboot on its own. The Pi sets up its storage, applies your settings, and switches the system to read-only. Leave it alone until it comes back.
+
+**Every boot after that** is under a minute, straight into Carbide Motion full screen. No login, no desktop, no wizard.
+
+**If Carbide Motion crashes or is closed**, it restarts by itself within a couple of seconds. The status file counts how often that has happened, so a machine that is quietly crash-looping is visible rather than mysterious.
+
+**Pulling the power is safe.** There is nothing to shut down and no shutdown sequence to remember. The system partition cannot be written to, so it cannot be corrupted. Files in the share are written straight to disk rather than held in memory.
+
+**Changing anything means the card.** Power off, put the card in your Mac, edit `kiosk.conf`, put it back. Changes you make on the running machine do not survive a reboot, by design.
+
+**The Shapeoko is detected automatically** when you plug it in. If it is not recognised, the status file names the device it found so you can add its ID to `kiosk.conf`.
+
+## What it deliberately does not do
+
+No remote shell, no SSH, no web interface. File sharing is the only thing that answers on the network. A machine that can move a spindle should require standing next to it, so service access is physical: keyboard plus Ctrl+Alt+F2.
+
+No automatic updates. The system is read-only and stays exactly as flashed. Updating means flashing a newer image.
+
+No file storage. The share is a drop box for jobs, not a home for your work. Reflashing the card erases it.
+
 ## Changing the configuration later
 
 `kiosk.conf` is read fresh on every boot, so the whole administration story is: power the Pi down, read the card on another machine, edit the file, put it back. Nothing else on the system needs to be touched, and nothing you change on the running system survives a reboot — that is what makes the power-loss guarantee hold.

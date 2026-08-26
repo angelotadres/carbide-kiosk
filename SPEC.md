@@ -18,6 +18,19 @@ Those dependency names pin the base to Debian Bookworm. Debian's 64-bit `time_t`
 
 Carbide 3D's stated requirement is a Pi 4 on 32-bit Raspbian with a 1280x1024 minimum display, and they have acknowledged Pi 5 rendering problems on very large (>100 MB) G-code files, which are GPU-bound rather than fixable from the image side.
 
+## Decisions at a glance
+
+- 32-bit Raspberry Pi OS Lite, Bookworm, built with pi-gen in Docker at a pinned tag.
+- Carbide Motion downloaded at build time, never redistributed; a package in `deb/` overrides the download.
+- Read-only root under overlayfs; a third partition, created on first boot, holds all writable state.
+- All runtime configuration regenerated every boot from `kiosk.conf` on the boot partition.
+- Samba with one authenticated account, no guest access, fixed share UID.
+- No network shell at any privilege level. Samba is the only listener; mDNS and ICMP are opt-in.
+- Diagnostics delivered as a plain-text status file in the share, refreshed every five minutes.
+- Service access is physical: autologin console on tty2.
+- No known credential in the published image; the first-user password is random per build and then disabled.
+- Bounded 64M persistent journal on the data partition.
+
 ## Decisions
 
 The base is Raspberry Pi OS Lite 32-bit (armhf), Bookworm. The application package is armhf, so a native 32-bit userland takes its Qt5 dependencies straight from the Raspberry Pi OS archive with no multi-arch and no second library stack to track. Bookworm rather than Trixie because of the `t64` rename above. The Pi 5 boots 32-bit Bookworm without issue and Carbide Motion needs nothing 64-bit.
