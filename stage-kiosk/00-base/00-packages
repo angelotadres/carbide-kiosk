@@ -8,13 +8,12 @@ x11-xserver-utils
 openbox
 unclutter
 
-# On-screen keyboard for the touch panel, and the pieces it needs: a session
-# bus, accessibility so it can detect focused text fields, and gsettings to
-# store its configuration.
-onboard
-dbus-x11
-at-spi2-core
-libglib2.0-bin
+# On-screen keyboard. xvkbd rather than onboard: onboard manages its own
+# window and refuses window-manager decoration, so it could not be dragged,
+# and its auto-show needs the application to publish focused text fields over
+# accessibility, which Carbide Motion does not do. xvkbd is a plain X window
+# the window manager can place, raise and decorate like any other.
+xvkbd
 
 # Screensaver. phosphor is a plain text renderer with no GL, which is both
 # cheaper than the graphical hacks and more useful: it shows the share address.
@@ -22,8 +21,10 @@ xscreensaver
 xscreensaver-data
 xscreensaver-data-extra
 
-# Needed to place and raise the keyboard window from the session script.
+# Needed to find, place and raise the keyboard window from the session
+# script. The window is skip-taskbar, so it has to be located by class.
 wmctrl
+xdotool
 libgl1-mesa-dri
 libglu1-mesa
 fonts-dejavu-core

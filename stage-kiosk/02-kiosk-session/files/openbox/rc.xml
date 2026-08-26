@@ -1,20 +1,35 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <openbox_config xmlns="http://openbox.org/3.4/rc">
-  <theme><keepBorder>no</keepBorder></theme>
+  <theme>
+    <keepBorder>yes</keepBorder>
+    <titleLayout>LIMC</titleLayout>
+    <font place="ActiveWindow"><name>sans</name><size>16</size><weight>bold</weight></font>
+    <font place="InactiveWindow"><name>sans</name><size>16</size><weight>bold</weight></font>
+  </theme>
   <desktops><number>1</number></desktops>
   <applications>
-    <!-- Carbide Motion fills the screen with no decoration. Maximised rather
+    <!-- The main window fills the screen with no decoration. Maximised rather
          than fullscreen deliberately: a fullscreen window outranks the
-         always-on-top layer, which would put it over the keyboard. Its
-         dialogs share this class and inherit the same treatment. -->
-    <application class="CarbideMotion6">
+         always-on-top layer and would cover the keyboard. -->
+    <application class="CarbideMotion6" type="normal">
       <decor>no</decor>
       <maximized>yes</maximized>
       <layer>normal</layer>
       <focus>yes</focus>
     </application>
-    <application name="onboard" class="Onboard">
-      <decor>no</decor>
+    <!-- Dialogs stay their natural size. A maximised dialog takes the whole
+         screen and sits over the keyboard, which is precisely when someone
+         needs to type a filename. -->
+    <application class="CarbideMotion6" type="dialog">
+      <decor>yes</decor>
+      <maximized>no</maximized>
+      <layer>normal</layer>
+      <position force="no"><x>center</x><y>80</y></position>
+    </application>
+    <!-- The keyboard keeps its title bar on purpose: it is the drag handle,
+         and a title bar is a far easier finger target than a thin border. -->
+    <application name="xvkbd" class="XVkbd">
+      <decor>yes</decor>
       <layer>above</layer>
       <focus>no</focus>
       <skip_taskbar>yes</skip_taskbar>

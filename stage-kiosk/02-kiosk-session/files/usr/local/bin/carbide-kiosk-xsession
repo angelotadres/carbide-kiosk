@@ -43,10 +43,28 @@ export QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
 # openbox understands window layers, which is what lets the keyboard float
 # above a maximised Carbide Motion. matchbox could not do this.
 openbox &
-sleep 1
+# The keyboard must not start before the window manager is managing windows,
+# or it comes up unmanaged and cannot be raised or dragged afterwards.
+sleep 3
 
 if [ "$keyboard" = "1" ]; then
-  onboard &
+  kb_geom="$(kiosk_get keyboard_geometry '1100x360+420+760')"
+  # No -no-functionkeys: xvkbd rejects that option and exits immediately,
+  # which looked exactly like the keyboard failing to appear.
+  xvkbd -geometry "$kb_geom" -no-keypad &
+  # openbox applies its layer rule when the window appears, but setting the
+  # state directly is what actually kept it above a maximised application.
+  # Found by class, not through wmctrl's window list: the window is marked
+  # skip-taskbar, which is exactly what that list leaves out.
+  ( for _ in 1 2 3 4 5; do
+      sleep 3
+      wid="$(xdotool search --class XVkbd 2>/dev/null | tail -1)"
+      if [ -n "$wid" ]; then
+        wmctrl -i -r "$wid" -b add,above 2>/dev/null
+        xdotool windowraise "$wid" 2>/dev/null
+        break
+      fi
+    done ) &
 fi
 
 if [ "$saver_min" = "0" ]; then

@@ -86,11 +86,13 @@ ui_scale=2
 
 # --- On-screen keyboard -------------------------------------------------
 #
-# A floating keyboard for the touch panel. It appears when you tap a text
-# field, and there is a small icon at the bottom right to summon it by hand.
-# Drag it by its edge to move it out of the way.
+# A floating keyboard for the touch panel. It sits above the application and
+# never resizes it. Drag it anywhere by its title bar.
 
 enable_keyboard=1
+
+# Size and position, in the usual X form WIDTHxHEIGHT+X+Y.
+keyboard_geometry=1100x360+420+760
 
 # --- Screensaver --------------------------------------------------------
 #
