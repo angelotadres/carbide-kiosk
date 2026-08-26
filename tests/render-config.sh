@@ -76,7 +76,7 @@ check "input defaults to drop"   contains "$NFT" "policy drop;"
 check "forward defaults to drop" contains "$NFT" "chain forward"
 check "samba tcp is open"        contains "$NFT" "tcp dport { 139, 445 } accept"
 check "samba udp is open"        contains "$NFT" "udp dport { 137, 138 } accept"
-check "ssh is not open"          absent   "$NFT" "tcp dport 22"
+check "ssh is closed by default" absent   "$NFT" "dport 22"
 check "mdns stays closed"        absent   "$NFT" "udp dport 5353"
 check "ping stays closed"        absent   "$NFT" "echo-request"
 
@@ -101,10 +101,9 @@ NFT="$WORK/open/etc/nftables.conf"
 UDEV="$WORK/open/etc/udev/rules.d/60-carbide-cnc.rules"
 
 check "open ruleset is valid"    nft -c -f "$NFT"
-# There is no supported way to get a network shell. Someone adding
-# enable_ssh=1 by hand, or carrying it over from an older kiosk.conf, must
-# not be able to open port 22 on a machine that can move a spindle.
-check "enable_ssh cannot open port 22" absent "$NFT" "tcp dport 22"
+# enable_ssh alone must not open the port: an open port onto an account
+# nobody can authenticate against is worse than no port at all.
+check "enable_ssh without a credential stays shut" absent "$NFT" "dport 22"
 check "mdns opens on request"    contains "$NFT" "udp dport 5353 accept"
 check "ping opens on request"    contains "$NFT" "echo-request accept"
 check "extra vendor accepted"    contains "$UDEV" 'ATTRS{idVendor}=="1234"'
@@ -146,6 +145,39 @@ check "bad hostname falls back" contains "$WORK/badhost/etc/hostname" "carbide-k
   || pass=$((pass+1))
 check "nothing is written without the library" \
   test ! -e "$WORK/nolib/etc/nftables.conf"
+
+# --- ssh, which only opens with a credential ----------------------------
+
+cat > "$WORK/sshkey.conf" <<'CONF'
+samba_user=cnc
+samba_password=hunter2
+enable_ssh=1
+ssh_authorized_key=ssh-ed25519 AAAATESTKEY carbide@test
+CONF
+check "key config renders" render "$WORK/sshkey.conf" "$WORK/sshkey"
+NFT="$WORK/sshkey/etc/nftables.conf"
+SSHD="$WORK/sshkey/etc/ssh/sshd_config.d/carbide-kiosk.conf"
+check "ssh ruleset is valid"     nft -c -f "$NFT"
+check "port 22 opens with a key" contains "$NFT" "tcp dport 22 ct state new"
+check "passwords are refused"    contains "$SSHD" "PasswordAuthentication no"
+check "root cannot log in"       contains "$SSHD" "PermitRootLogin no"
+check "only kiosk may log in"    contains "$SSHD" "AllowUsers kiosk"
+check "host key is persistent"   contains "$SSHD" "HostKey /data/ssh/"
+check "brute force is limited"   contains "$SSHD" "MaxAuthTries 3"
+check "no empty passwords"       contains "$SSHD" "PermitEmptyPasswords no"
+check "no port forwarding"       contains "$SSHD" "AllowTcpForwarding no"
+
+cat > "$WORK/sshpw.conf" <<'CONF'
+samba_user=cnc
+samba_password=hunter2
+enable_ssh=1
+ssh_password=troubleshooting
+CONF
+check "password config renders"  render "$WORK/sshpw.conf" "$WORK/sshpw"
+check "port 22 opens with a password" contains "$WORK/sshpw/etc/nftables.conf" "tcp dport 22 ct state new"
+check "password login allowed"   contains "$WORK/sshpw/etc/ssh/sshd_config.d/carbide-kiosk.conf" "PasswordAuthentication yes"
+check "ssh password is not in the share status path" \
+  bash -c '! grep -rq troubleshooting "$1/etc/samba" 2>/dev/null' _ "$WORK/sshpw"
 
 printf 'render-config: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

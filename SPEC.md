@@ -25,7 +25,7 @@ Carbide 3D's stated requirement is a Pi 4 on 32-bit Raspbian with a 1280x1024 mi
 - Read-only root under overlayfs; a third partition, created on first boot, holds all writable state.
 - All runtime configuration regenerated every boot from `kiosk.conf` on the boot partition.
 - Samba with one authenticated account, no guest access, fixed share UID.
-- No network shell at any privilege level. Samba is the only listener; mDNS and ICMP are opt-in.
+- Samba is the only listener by default. SSH, mDNS and ICMP are opt-in through `kiosk.conf`, which can only be changed by physically removing the card.
 - Diagnostics delivered as a plain-text status file in the share, refreshed every five minutes.
 - Service access is physical: autologin console on tty2.
 - No known credential in the published image; the first-user password is random per build and then disabled.
@@ -86,7 +86,11 @@ The Samba account is separate, created at boot from `kiosk.conf` with a fixed UI
 
 `nftables` with a default-drop input policy. Permitted inbound: loopback, established and related, and Samba (`445/tcp`, `139/tcp`, `137-138/udp`). mDNS (`5353/udp`, for macOS Finder discovery) is opt-in via `enable_mdns=1`, and ICMP echo via `enable_ping=1`. Everything else is dropped.
 
-There is no network shell, and no setting that creates one. This machine drives a spindle: reaching it should require standing next to it, so remote administration is not a feature the image offers at any privilege level. `sshd` is disabled at build time and again on every boot, and a test asserts that `enable_ssh=1` left in a `kiosk.conf` cannot open port 22.
+SSH is off by default and opens only when `enable_ssh=1` is paired with a credential. `enable_ssh=1` on its own leaves the port shut: an open port onto an account nobody can authenticate against is worse than no port. A key in `ssh_authorized_key` is preferred and disables password authentication outright; `ssh_password` exists as a fallback and is stored in clear text on the card.
+
+The door is gated on physical possession. `kiosk.conf` lives on the boot partition, so opening SSH means powering the machine down, taking the card out, and editing it on another computer. Nothing reachable over the network can turn it on.
+
+When open, `sshd` permits only the `kiosk` account, refuses root, refuses empty passwords, disables both forwarding kinds, allows three authentication attempts and a twenty-second grace period. New connections to port 22 are rate limited to six a minute in the firewall, which blunts brute force without a log-scraping daemon. The host key lives on the data partition so it survives the volatile overlay and does not change on every boot.
 
 ### Diagnostics
 
@@ -111,7 +115,8 @@ Everything an operator sets lives in `kiosk.conf` on the boot partition, readabl
 - `samba_user`, `samba_password` — required; the share stays down without them.
 - `samba_share_name`, `samba_min_protocol`, `samba_encrypt` — share naming and transport hardening.
 - `wifi_ssid`, `wifi_password`, `wifi_country` — omit entirely for Ethernet.
-- `enable_mdns`, `enable_ping` — inbound exceptions, both off by default. There is deliberately no SSH switch.
+- `enable_ssh`, `ssh_authorized_key`, `ssh_password` — troubleshooting access, off by default and refusing to open without a credential.
+- `enable_mdns`, `enable_ping` — inbound exceptions, both off by default.
 - `usb_vendor_ids` — additional USB vendor IDs to treat as a CNC controller.
 - `screen_rotation`, `screen_resolution` — display handling for panel-mounted screens.
 
@@ -172,6 +177,7 @@ carbide-kiosk/
 - [x] `06-resilience`: disable swap, systemd hardware watchdog, `/data` mount options, bounded persistent journal on `/data`
 - [x] `07-firstboot`: partition creation, overlayfs enable, self-disable
 - [x] `08-status`: status writer, timer, and the redaction that keeps secrets out of the share
+- [x] `09-boot-cmdline`: remove the Raspberry Pi OS first-boot resize hook so the card is not consumed by the root partition
 
 ### Verification
 

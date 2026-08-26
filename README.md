@@ -8,7 +8,7 @@ Flash it, drop a config file on the boot partition, and plug it in next to a Sha
 
 The root filesystem is read-only under an overlay, so an unclean shutdown cannot corrupt the operating system. A separate data partition holds the Samba share and Carbide Motion's settings. A USB Shapeoko is detected automatically and exposed to the session as `/dev/shapeoko`.
 
-It behaves like an appliance rather than a computer. File sharing is the only thing reachable over the network, and there is no remote shell at any privilege level — this machine drives a spindle, so reaching it should mean standing next to it. It reports on itself instead: a plain-text `CARBIDE-STATUS.txt` appears in the share, refreshed on boot and every five minutes, saying whether Carbide Motion is running, whether the Shapeoko is detected, how much space is left, whether the power supply is sagging, and what has gone wrong recently. Open it from any Mac or PC. If you ever need a real console, plug in a keyboard and press Ctrl+Alt+F2.
+It behaves like an appliance rather than a computer. File sharing is the only thing reachable over the network unless you deliberately open more, and every switch that opens something lives on the SD card — so turning anything on means holding the machine in your hands. It reports on itself instead: a plain-text `CARBIDE-STATUS.txt` appears in the share, refreshed on boot and every five minutes, saying whether Carbide Motion is running, whether the Shapeoko is detected, how much space is left, whether the power supply is sagging, and what has gone wrong recently. Open it from any Mac or PC. If you ever need a real console, plug in a keyboard and press Ctrl+Alt+F2.
 
 The full design, including the reasoning behind each choice, is in [SPEC.md](SPEC.md).
 
@@ -48,7 +48,7 @@ The share appears as `\\carbide-kiosk\gcode` on Windows and `smb://carbide-kiosk
 
 ## What it deliberately does not do
 
-No remote shell, no SSH, no web interface. File sharing is the only thing that answers on the network. A machine that can move a spindle should require standing next to it, so service access is physical: keyboard plus Ctrl+Alt+F2.
+No web interface, and nothing that can be switched on remotely. SSH exists for troubleshooting but is off by default, and turning it on means powering down and editing `kiosk.conf` on the card. It refuses to open the port unless you also supply a key or password, only the `kiosk` account may log in, root cannot, and repeated attempts are rate limited. A console is always available to whoever is holding the machine: keyboard plus Ctrl+Alt+F2.
 
 No automatic updates. The system is read-only and stays exactly as flashed. Updating means flashing a newer image.
 

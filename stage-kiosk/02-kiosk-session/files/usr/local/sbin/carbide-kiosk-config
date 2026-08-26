@@ -174,6 +174,14 @@ configure_firewall() {
     printf '    udp sport 67 udp dport 68 accept\n'
     printf '    ip6 nexthdr icmpv6 icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-advert } accept\n'
 
+    if kiosk_enabled enable_ssh \
+       && { [ -n "$(kiosk_get ssh_authorized_key)" ] || [ -n "$(kiosk_get ssh_password)" ]; }; then
+      printf '\n    # enable_ssh=1 with a credential set.\n'
+      printf '    # Brute force is the realistic attack on an exposed port, so\n'
+      printf '    # new connections are rate limited. An established session is\n'
+      printf '    # already accepted by the conntrack rule above.\n'
+      printf '    tcp dport 22 ct state new limit rate 6/minute burst 3 packets accept\n'
+    fi
     if kiosk_enabled enable_mdns; then
       printf '\n    # enable_mdns=1\n    udp dport 5353 accept\n'
     fi
@@ -196,15 +204,77 @@ configure_firewall() {
   nft -c -f "$ruleset" || kiosk_die "generated nftables ruleset is not valid"
   rendering && return 0
   nft -f "$ruleset" || kiosk_die "could not load the nftables ruleset"
-
-  # There is no option to turn this on. A network shell onto a machine that
-  # can move a spindle is not a feature this image offers.
-  systemctl disable --now ssh 2>/dev/null
   if kiosk_enabled enable_mdns; then
     systemctl enable --now avahi-daemon 2>/dev/null || kiosk_log "avahi is not installed"
   else
     systemctl disable --now avahi-daemon 2>/dev/null
   fi
+}
+
+# SSH is off unless kiosk.conf says otherwise, and kiosk.conf can only be
+# changed by taking the card out of the machine. Opening the door is therefore
+# always a physical act, which is the property worth keeping.
+configure_ssh() {
+  local key password dropin=/etc/ssh/sshd_config.d/carbide-kiosk.conf
+  local hostkey="$KIOSK_DATA/ssh/ssh_host_ed25519_key"
+
+  if ! kiosk_enabled enable_ssh; then
+    rendering || systemctl disable --now ssh 2>/dev/null
+    return 0
+  fi
+
+  key="$(kiosk_get ssh_authorized_key)"
+  password="$(kiosk_get ssh_password)"
+
+  if [ -z "$key" ] && [ -z "$password" ]; then
+    kiosk_log "enable_ssh=1 but neither ssh_authorized_key nor ssh_password is set"
+    kiosk_log "refusing to open port 22 onto an account nobody can log into"
+    rendering || systemctl disable --now ssh 2>/dev/null
+    return 0
+  fi
+
+  install -d -m 755 "$(outfile /etc/ssh/sshd_config.d)"
+  {
+    printf '# Generated from %s on every boot.\n' "$KIOSK_CONF"
+    printf 'PermitRootLogin no\n'
+    printf 'PermitEmptyPasswords no\n'
+    printf 'KbdInteractiveAuthentication no\n'
+    printf 'X11Forwarding no\n'
+    printf 'AllowTcpForwarding no\n'
+    printf 'AllowAgentForwarding no\n'
+    printf 'MaxAuthTries 3\n'
+    printf 'MaxSessions 2\n'
+    printf 'LoginGraceTime 20\n'
+    printf 'AllowUsers kiosk\n'
+    # /etc is on the volatile overlay, so a host key generated there would
+    # change on every boot and every client would report it as an attack.
+    printf 'HostKey %s\n' "$hostkey"
+    if [ -n "$key" ]; then
+      printf 'PasswordAuthentication no\n'
+      printf 'PubkeyAuthentication yes\n'
+    else
+      printf 'PasswordAuthentication yes\n'
+    fi
+  } > "$(outfile "$dropin")"
+
+  rendering && return 0
+
+  install -d -m 700 "$KIOSK_DATA/ssh"
+  [ -f "$hostkey" ] || ssh-keygen -t ed25519 -N '' -f "$hostkey" -q
+  chmod 600 "$hostkey"
+
+  if [ -n "$key" ]; then
+    install -d -m 700 -o kiosk -g kiosk /home/kiosk/.ssh
+    printf '%s\n' "$key" > /home/kiosk/.ssh/authorized_keys
+    chmod 600 /home/kiosk/.ssh/authorized_keys
+    chown kiosk:kiosk /home/kiosk/.ssh/authorized_keys
+    kiosk_log "ssh enabled, key only"
+  else
+    printf 'kiosk:%s\n' "$password" | chpasswd
+    kiosk_log "ssh enabled with a password; prefer ssh_authorized_key"
+  fi
+
+  systemctl enable --now ssh 2>/dev/null || kiosk_log "could not start sshd"
 }
 
 configure_cnc_udev() {
@@ -245,6 +315,7 @@ main() {
   configure_wifi
   configure_share_account
   configure_samba
+  configure_ssh
   configure_firewall
   configure_cnc_udev
   kiosk_log "runtime configuration applied"

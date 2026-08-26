@@ -7,6 +7,12 @@ RequiresMountsFor=/data
 Conflicts=getty@tty1.service
 After=getty@tty1.service
 
+# If the session cannot start, stop trying. Restarting every two seconds
+# steals the display and the keyboard, which makes the machine impossible to
+# diagnose at exactly the moment someone needs to.
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
 [Service]
 Type=simple
 User=kiosk
@@ -21,7 +27,7 @@ StandardError=journal
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 ExecStart=/usr/bin/xinit /usr/local/bin/carbide-kiosk-xsession -- :0 vt1 -keeptty -nolisten tcp
 Restart=always
-RestartSec=2
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target

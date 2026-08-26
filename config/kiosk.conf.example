@@ -33,9 +33,24 @@ wifi_country=US
 
 # --- Inbound exceptions -------------------------------------------------
 #
-# Everything except Samba is dropped, and there is deliberately no way to open
-# a shell over the network. This machine can move a spindle; reaching it should
-# require standing next to it. Each setting below opens exactly one more thing.
+# Everything except Samba is dropped. Each setting below opens exactly one
+# more thing, and changing any of them means taking the card out of the
+# machine - so opening a door always requires physically holding the machine.
+
+# Opens 22/tcp for troubleshooting. Off by default, and it will refuse to open
+# unless one of the two credentials below is also set - an open port nobody
+# can log into is worse than no port at all.
+#
+# This machine can move a spindle. Turn it off again when you are done.
+enable_ssh=0
+
+# Preferred. Paste one public key line, for example the contents of
+# ~/.ssh/id_ed25519.pub. Password login is refused whenever a key is set.
+ssh_authorized_key=
+
+# Fallback if you have no key to hand. Stored in clear text on this card, so
+# do not reuse samba_password or anything else that matters.
+ssh_password=
 
 # Opens 5353/udp so macOS Finder can discover the share by name.
 enable_mdns=0
