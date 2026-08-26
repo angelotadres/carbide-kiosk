@@ -48,10 +48,18 @@ openbox &
 sleep 3
 
 if [ "$keyboard" = "1" ]; then
-  kb_geom="$(kiosk_get keyboard_geometry '1100x360+420+760')"
+  kb_geom="$(kiosk_get keyboard_geometry '1500x520+200+640')"
+  kb_font="$(kiosk_get keyboard_font_size 24)"
+  case "$kb_font" in ''|*[!0-9]*) kb_font=24 ;; esac
+  kb_xlfd="-*-helvetica-bold-r-normal--${kb_font}-*-*-*-*-*-iso8859-1"
+  # xvkbd draws with Athena widgets, which ignore QT_SCALE_FACTOR entirely,
+  # so its type has to be sized through X resources instead.
+  #
   # No -no-functionkeys: xvkbd rejects that option and exits immediately,
   # which looked exactly like the keyboard failing to appear.
-  xvkbd -geometry "$kb_geom" -no-keypad &
+  xvkbd -geometry "$kb_geom" -no-keypad \
+    -xrm "xvkbd*Font: $kb_xlfd" \
+    -xrm "xvkbd*keyFont: $kb_xlfd" &
   # openbox applies its layer rule when the window appears, but setting the
   # state directly is what actually kept it above a maximised application.
   # Found by class, not through wmctrl's window list: the window is marked

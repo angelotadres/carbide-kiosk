@@ -70,9 +70,21 @@ flowchart TD
 
 The first-boot unit disables itself before rebooting, and enabling overlayfs is the last step it takes, since everything after that point is no longer persistent. Because the overlay upper layer is tmpfs, every write to `/etc` is discarded at shutdown, so `carbide-kiosk-config.service` regenerates the Samba, nftables, udev, hostname and WiFi configuration from `kiosk.conf` on every boot rather than once at first boot.
 
+### Confirmed on hardware
+
+Verified on a Pi 5 with a 1920x1200 touch panel and a Shapeoko 5 Pro, over SSH, on 2026-08-26. Carbide Motion runs, connects to the machine and jogs it. The share accepts files from macOS and Carbide Motion can read them. The status file, the screensaver, the keyboard and SSH all work.
+
+Five things were wrong and are fixed. Carbide Motion under-declares its dependencies: it names seven Qt5 libraries and links against an eighth, `libQt5PrintSupport`, so the image needs that explicitly and CI now asks the linker rather than trusting `Depends`. The Shapeoko 5 Pro presents as USB vendor `16d0`, which no published list predicted. The kiosk account was not in the share group, so Carbide Motion could not open the very directory Samba writes to. `matchbox-window-manager` has no window layers, so no on-screen keyboard could float above the application. And the Raspberry Pi OS first-boot hook expands the root partition across the whole card, leaving nothing for the data partition.
+
+The one capability that is not available: no keyboard can appear when a text field is focused. That needs the application to publish focus over accessibility, and Carbide Motion does not. The keyboard is summoned by hand instead.
+
 ### Kiosk session
 
-`carbide-kiosk.service` runs as the unprivileged `kiosk` user with `Restart=always`, launching `xinit` against a minimal X session: `matchbox-window-manager` for fullscreen, `unclutter` to hide the pointer, `xset s off -dpms` to defeat blanking, then `/usr/local/bin/carbidemotion`. If Carbide Motion crashes or is closed, systemd brings the session straight back. `/etc/X11/Xwrapper.config` allows a non-console user to start X.
+`carbide-kiosk.service` runs as the unprivileged `kiosk` user, launching `xinit` against a minimal X session: `openbox` as the window manager, `xvkbd` as the on-screen keyboard with a one-button `tint2` launcher to summon it, `xscreensaver`, `unclutter` to hide the pointer, then `/usr/local/bin/carbidemotion`. If Carbide Motion crashes the session restarts, but only five times in two minutes: a session that cannot start must leave the operator a usable console rather than fighting them for the keyboard.
+
+openbox rather than matchbox because matchbox has no window layers and the keyboard could never float above the application. The main window is maximised and undecorated rather than fullscreen, deliberately: a fullscreen window outranks the always-on-top layer and would cover the keyboard. Dialogs keep their natural size for the same reason.
+
+Carbide Motion's interface is scaled with `QT_SCALE_FACTOR`. The keyboard is an Athena application and ignores that entirely, so its type is sized separately through X resources.
 
 Carbide Motion's settings directory is symlinked into `/data` so preferences and machine configuration survive the read-only root.
 
@@ -201,13 +213,13 @@ carbide-kiosk/
 
 ### Not yet verified
 
-- [ ] Run `build.sh` end to end and confirm the image builds; nothing below can be checked until it has
+- [ ] A clean flash of the current image on a blank card, coming up unattended. Everything confirmed above was reached by repairing the running machine over SSH; the first-boot path itself has still never succeeded end to end.
+
 - [ ] Confirm `agetty --autologin` accepts an account whose password field is `*`, so the physical console actually works
 - [ ] Boot the built image and confirm the first-boot sequence completes and reboots into Carbide Motion
 
 ### Hardware confirmation
 
-- [ ] Confirm the running-mode USB vendor and product ID of the target Shapeoko, and narrow the udev allowlist to it
 - [ ] Verify Carbide Motion renders acceptably on the intended display and typical job sizes
 - [ ] Pull the power mid-job, ten times, and confirm clean boots with an intact share
 
