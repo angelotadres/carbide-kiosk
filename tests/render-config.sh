@@ -143,7 +143,7 @@ check "bad hostname falls back" contains "$WORK/badhost/etc/hostname" "carbide-k
 ) && { fail=$((fail+1)); printf 'FAIL: a missing library did not abort the run\n' >&2; } \
   || pass=$((pass+1))
 check "nothing is written without the library" \
-  bash -c '[ ! -e "$1/etc/nftables.conf" ]' _ "$WORK/nolib"
+  test ! -e "$WORK/nolib/etc/nftables.conf"
 
 printf 'render-config: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

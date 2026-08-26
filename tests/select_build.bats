@@ -67,7 +67,8 @@ setup() {
   CARBIDE_MOTION_DEB_DIR="$dir"
   run main "$dir"
   [ "$status" -eq 0 ]
-  [ "$output" = "$dir/carbidemotion-654.deb" ]
+  # bats folds stderr into $output, and the script logs its choice there.
+  [ "${lines[-1]}" = "$dir/carbidemotion-654.deb" ]
 }
 
 @test "no offline package and no network is a hard failure" {

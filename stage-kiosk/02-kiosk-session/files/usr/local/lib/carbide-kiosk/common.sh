@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Shared helpers for the Carbide Motion Kiosk runtime scripts.
 # Sourced, never executed.
 

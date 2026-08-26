@@ -43,7 +43,11 @@ jobs:
   render:
     name: generated configuration
     runs-on: ubuntu-latest
-    container: debian:bookworm
+    container:
+      image: debian:bookworm
+      # nft --check still talks to the kernel, so it needs the capability
+      # even though it loads nothing.
+      options: --cap-add=NET_ADMIN
     steps:
       - uses: actions/checkout@v4
       - name: Install the parsers that must accept our output

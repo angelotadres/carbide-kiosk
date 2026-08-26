@@ -25,9 +25,8 @@ require_docker() {
 
 stage_carbide_motion() {
   local deb
-  deb="$(CARBIDE_MOTION_BUILD="$CARBIDE_MOTION_BUILD" \
-         CARBIDE_MOTION_DEB_DIR="$CARBIDE_MOTION_DEB_DIR" \
-         ./scripts/fetch-carbide-motion.sh "$CARBIDE_MOTION_DEB_DIR")" \
+  export CARBIDE_MOTION_BUILD CARBIDE_MOTION_DEB_DIR
+  deb="$(./scripts/fetch-carbide-motion.sh "$CARBIDE_MOTION_DEB_DIR")" \
     || die "could not obtain the Carbide Motion package"
   install -m 644 "$deb" "$STAGE_SRC/01-carbide-motion/files/carbidemotion.deb"
   log "staged $deb"

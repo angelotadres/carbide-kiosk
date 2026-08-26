@@ -42,7 +42,8 @@ cm_list_local() {
 
 cm_list_remote() {
   curl -fsS --max-time 60 "$CARBIDE_MOTION_REPO_URL" \
-    | tr '<>' '\n\n' \
+    | tr '<' '\n' \
+    | tr '>' '\n' \
     | grep -oE '^carbidemotion-[0-9]+\.deb$' \
     | sort -u
 }
