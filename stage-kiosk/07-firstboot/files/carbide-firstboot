@@ -88,6 +88,11 @@ mount_data_partition() {
     'LABEL=%s\t%s\text4\tdefaults,noatime,commit=1,errors=remount-ro\t0\t2\n' \
     "$DATA_LABEL" "$KIOSK_DATA" >> /etc/fstab
   mount "$KIOSK_DATA" || kiosk_die "could not mount $KIOSK_DATA"
+
+  install -d -m 2755 -o root -g systemd-journal "$KIOSK_DATA/log/journal"
+  grep -q '/var/log/journal' /etc/fstab || printf \
+    '%s/log/journal\t/var/log/journal\tnone\tbind\t0\t0\n' "$KIOSK_DATA" >> /etc/fstab
+  mount /var/log/journal || kiosk_log "could not bind the journal directory"
   install -d -m 755 "$KIOSK_DATA/kiosk/config" "$KIOSK_DATA/kiosk/share"
   chown -R kiosk:kiosk "$KIOSK_DATA/kiosk"
   install -d -m 2755 -o root -g systemd-journal "$KIOSK_DATA/log/journal"

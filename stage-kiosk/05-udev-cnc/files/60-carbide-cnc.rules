@@ -3,6 +3,7 @@
 # carbide-kiosk-config overwrites this on every boot with the vendor list from
 # kiosk.conf. It exists so that a missing or malformed kiosk.conf still leaves
 # the Shapeoko reachable rather than the machine unusable.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="16d0", SYMLINK+="shapeoko", GROUP="dialout", MODE="0660", TAG+="uaccess"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="03eb", SYMLINK+="shapeoko", GROUP="dialout", MODE="0660", TAG+="uaccess"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="2341", SYMLINK+="shapeoko", GROUP="dialout", MODE="0660", TAG+="uaccess"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="2a03", SYMLINK+="shapeoko", GROUP="dialout", MODE="0660", TAG+="uaccess"

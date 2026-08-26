@@ -15,6 +15,9 @@ libqt5network5
 libqt5gamepad5
 libqt5serialport5
 libqt5websockets5
+# Not declared by the carbidemotion package, but the binary links against it.
+# Without this the app dies at startup with a missing libQt5PrintSupport.so.5.
+libqt5printsupport5
 samba
 samba-common-bin
 nftables

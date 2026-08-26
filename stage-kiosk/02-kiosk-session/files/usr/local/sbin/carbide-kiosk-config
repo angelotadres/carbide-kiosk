@@ -282,7 +282,9 @@ configure_cnc_udev() {
   rule="$(outfile /etc/udev/rules.d/60-carbide-cnc.rules)"
   # Seeded with the vendors Carbide 3D and Shapeoko-family boards are known to
   # present. kiosk.conf extends this without rebuilding the image.
-  local vendors="03eb 2341 2a03 1a86 0403 10c4"
+  # 16d0 (MCS) is what a Shapeoko 5 Pro actually presents; the rest cover
+  # older Carbide and Arduino-derived boards.
+  local vendors="16d0 03eb 2341 2a03 1a86 0403 10c4"
 
   extra="$(kiosk_get usb_vendor_ids)"
   for id in $extra; do

@@ -15,10 +15,15 @@ fi
 
 on_chroot << 'CHROOT'
 set -e
-# /var/log is on the read-only overlay, so the persistent journal is pointed
-# at the data partition. The directory is created by carbide-firstboot.
+# /var/log is on the read-only overlay, so the journal lives on the data
+# partition. A bind mount rather than a symlink: systemd-tmpfiles cannot set
+# file flags on a symlink and complains on every boot.
 rm -rf /var/log/journal
-ln -sfn /data/log/journal /var/log/journal
+mkdir -p /var/log/journal
+
+# Bluetooth has no use on a CNC controller and fails noisily at every boot,
+# burying real problems in the status file.
+systemctl disable bluetooth.service hciuart.service 2>/dev/null || true
 # Swap on an SD card is both slow and a corruption surface, and Carbide Motion
 # does not need it.
 systemctl disable dphys-swapfile.service 2>/dev/null || true

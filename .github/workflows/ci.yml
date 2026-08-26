@@ -77,6 +77,17 @@ jobs:
               grep -vE "^\s*(#|$)" stage-kiosk/00-packages | xargs \
                 apt-get install --simulate --no-install-recommends
               apt-get install --simulate ./deb/carbidemotion-*.deb
+              # The package under-declares its dependencies: the binary links
+              # against libQt5PrintSupport, which Depends does not mention.
+              # Install for real and ask the linker, rather than trusting it.
+              apt-get install -y --no-install-recommends \
+                $(grep -vE "^\s*(#|$)" stage-kiosk/00-base/00-packages)
+              apt-get install -y ./deb/carbidemotion-*.deb
+              missing=$(ldd /usr/local/bin/carbidemotion | grep "not found" || true)
+              if [ -n "$missing" ]; then
+                echo "carbidemotion has unresolved libraries:"; echo "$missing"; exit 1
+              fi
+              echo "all libraries resolve"
             '
 
   staging:
