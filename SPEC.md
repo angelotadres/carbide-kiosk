@@ -63,6 +63,12 @@ The first-boot unit disables itself before rebooting, and enabling overlayfs is 
 
 Carbide Motion's settings directory is symlinked into `/data` so preferences and machine configuration survive the read-only root.
 
+### Accounts
+
+pi-gen always creates a first user and, when the first-boot rename wizard is disabled — which headless operation requires — insists on a password for it. `build.sh` therefore generates a random password per build and the kiosk stage locks the account immediately. The session is started by systemd, which does not authenticate, so the account never needs a usable password, and no published image carries a known credential. CI asserts both the length and that two builds differ.
+
+The Samba account is separate, created at boot from `kiosk.conf` with a fixed UID so renaming it does not orphan files already on the data partition.
+
 ### Network exposure
 
 `nftables` with a default-drop input policy. Permitted inbound: loopback, established and related, and Samba (`445/tcp`, `139/tcp`, `137-138/udp`). SSH is not installed as reachable by default and is opened only when `enable_ssh=1` is set in `kiosk.conf`. mDNS (`5353/udp`, for macOS Finder discovery) is likewise opt-in via `enable_mdns=1`. Everything else — including ICMP echo, unless `enable_ping=1` — is dropped.
@@ -159,6 +165,10 @@ carbide-kiosk/
 
 - [x] GitHub Actions workflow: lint and test on push, build the image on tag
 - [x] Attach the compressed `.img` and its checksum to the release
+
+### Open
+
+- [ ] Decide how the SSH escape hatch authenticates. The kiosk account is locked, so `enable_ssh=1` currently opens a port that cannot be logged into. Either `kiosk.conf` carries an authorized key, or it carries a password the config generator applies at boot.
 
 ### Not yet verified
 

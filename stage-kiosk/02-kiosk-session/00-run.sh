@@ -25,6 +25,12 @@ if ! id -u kiosk >/dev/null 2>&1; then
 fi
 usermod -aG video,render,input,tty,dialout,plugdev kiosk
 
+# pi-gen had to be given a password to build a headless image. Lock it: the
+# session is started by systemd, which does not authenticate, so the account
+# never needs a usable password. This is what stops the published image from
+# shipping a credential.
+passwd -l kiosk
+
 # Carbide Motion keeps its settings under the home directory. The root
 # filesystem is read-only, so both paths live on the data partition.
 rm -rf /home/kiosk/.config /home/kiosk/.local/share
