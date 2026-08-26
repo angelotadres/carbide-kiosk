@@ -102,7 +102,7 @@ jobs:
           # must be generated, not fixed, and the stage must lock the account.
           pass=$(sed -n "s/^FIRST_USER_PASS='\(.*\)'$/\1/p" pi-gen/config)
           test "${#pass}" -ge 32
-          grep -q 'passwd -l kiosk' stage-kiosk/02-kiosk-session/00-run.sh
+          grep -qE "usermod -p '[*]' kiosk" stage-kiosk/02-kiosk-session/00-run.sh
           # A second run must not produce the same password.
           mv pi-gen/config pi-gen/config.first
           CARBIDE_STAGE_ONLY=1 ./build.sh >/dev/null

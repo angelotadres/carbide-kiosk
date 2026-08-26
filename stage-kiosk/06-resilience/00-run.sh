@@ -15,6 +15,10 @@ fi
 
 on_chroot << 'CHROOT'
 set -e
+# /var/log is on the read-only overlay, so the persistent journal is pointed
+# at the data partition. The directory is created by carbide-firstboot.
+rm -rf /var/log/journal
+ln -sfn /data/log/journal /var/log/journal
 # Swap on an SD card is both slow and a corruption surface, and Carbide Motion
 # does not need it.
 systemctl disable dphys-swapfile.service 2>/dev/null || true

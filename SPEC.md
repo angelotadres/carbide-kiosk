@@ -71,7 +71,17 @@ The Samba account is separate, created at boot from `kiosk.conf` with a fixed UI
 
 ### Network exposure
 
-`nftables` with a default-drop input policy. Permitted inbound: loopback, established and related, and Samba (`445/tcp`, `139/tcp`, `137-138/udp`). SSH is not installed as reachable by default and is opened only when `enable_ssh=1` is set in `kiosk.conf`. mDNS (`5353/udp`, for macOS Finder discovery) is likewise opt-in via `enable_mdns=1`. Everything else — including ICMP echo, unless `enable_ping=1` — is dropped.
+`nftables` with a default-drop input policy. Permitted inbound: loopback, established and related, and Samba (`445/tcp`, `139/tcp`, `137-138/udp`). mDNS (`5353/udp`, for macOS Finder discovery) is opt-in via `enable_mdns=1`, and ICMP echo via `enable_ping=1`. Everything else is dropped.
+
+There is no network shell, and no setting that creates one. This machine drives a spindle: reaching it should require standing next to it, so remote administration is not a feature the image offers at any privilege level. `sshd` is disabled at build time and again on every boot, and a test asserts that `enable_ssh=1` left in a `kiosk.conf` cannot open port 22.
+
+### Diagnostics
+
+The appliance reports on itself through the share, the way a printer has a status page rather than a shell. `carbide-kiosk-status` writes `CARBIDE-STATUS.txt` into the share on boot and every five minutes: whether Carbide Motion is running and how often it has restarted, whether the Shapeoko is detected, free space, temperature, power-supply throttling, and recent errors from this boot and the one before it. It is plain text, so it opens on any machine that can reach the share — which matters because the data partition is ext4 and a Mac cannot read it off the card.
+
+Nothing from `kiosk.conf` reaches that file except the hostname and share name. Everything else is observed state, and the writer strips the configured Samba and WiFi passwords from its own output in case one leaks through a quoted log line. Six tests cover that stripping.
+
+Service access is physical. `getty@tty2` autologins the kiosk account, so Ctrl+Alt+F2 on a keyboard plugged into the machine gives a console. Anyone who can reach that keyboard can already remove the SD card, so it withholds nothing that matters, and it avoids a password that would otherwise have to live in a file.
 
 ### CNC device detection
 
@@ -88,7 +98,7 @@ Everything an operator sets lives in `kiosk.conf` on the boot partition, readabl
 - `samba_user`, `samba_password` — required; the share stays down without them.
 - `samba_share_name`, `samba_min_protocol`, `samba_encrypt` — share naming and transport hardening.
 - `wifi_ssid`, `wifi_password`, `wifi_country` — omit entirely for Ethernet.
-- `enable_ssh`, `enable_mdns`, `enable_ping` — inbound exceptions, all off by default.
+- `enable_mdns`, `enable_ping` — inbound exceptions, both off by default. There is deliberately no SSH switch.
 - `usb_vendor_ids` — additional USB vendor IDs to treat as a CNC controller.
 - `screen_rotation`, `screen_resolution` — display handling for panel-mounted screens.
 
@@ -146,8 +156,9 @@ carbide-kiosk/
 - [x] `03-samba`: enable `smbd`/`nmbd`; `smb.conf` itself is generated each boot, no guest access
 - [x] `04-firewall`: `nftables` default-drop ruleset with the Samba exceptions
 - [x] `05-udev-cnc`: `/dev/shapeoko` symlink rule, `dialout` membership
-- [x] `06-resilience`: disable swap, systemd hardware watchdog, `/data` mount options
+- [x] `06-resilience`: disable swap, systemd hardware watchdog, `/data` mount options, bounded persistent journal on `/data`
 - [x] `07-firstboot`: partition creation, overlayfs enable, self-disable
+- [x] `08-status`: status writer, timer, and the redaction that keeps secrets out of the share
 
 ### Verification
 
@@ -158,6 +169,7 @@ carbide-kiosk/
 - [x] `testparm -s` over the rendered `smb.conf`
 - [x] `nft -c -f` over the rendered ruleset
 - [x] Render-only mode on the config generator, so CI validates the real generator rather than a copy of it
+- [x] `bats` suite asserting the status writer strips configured passwords from its output
 - [x] `tests/render-config.sh`: 33 assertions over the generated share, firewall, hostname and udev rule, including that a missing library aborts before writing anything
 - [x] Pre-commit hook running `shellcheck` and the `bats` suites, so the conventions hold for any tool that writes to this repo
 
@@ -168,11 +180,10 @@ carbide-kiosk/
 
 ### Open
 
-- [ ] Decide how the SSH escape hatch authenticates. The kiosk account is locked, so `enable_ssh=1` currently opens a port that cannot be logged into. Either `kiosk.conf` carries an authorized key, or it carries a password the config generator applies at boot.
-
 ### Not yet verified
 
 - [ ] Run `build.sh` end to end and confirm the image builds; nothing below can be checked until it has
+- [ ] Confirm `agetty --autologin` accepts an account whose password field is `*`, so the physical console actually works
 - [ ] Boot the built image and confirm the first-boot sequence completes and reboots into Carbide Motion
 
 ### Hardware confirmation
@@ -187,4 +198,6 @@ Carbide 3D supports this package on a Pi 4, not a Pi 5, and the forum reports la
 
 Bookworm is oldstable and its security support ends before Carbide 3D is likely to ship an arm64 or Qt6 build. There is no forward path on Trixie without upstream rebuilding against `t64` Qt5, so the plan when Bookworm goes end-of-life is a pinned `snapshot.debian.org` archive rather than a suite upgrade. The narrow network exposure is what makes holding an ageing base tolerable; it is not a reason to widen it.
 
-An overlayfs root means updates are a deliberate act: remount read-write, change, reboot. That is the point, but it makes the box harder to fix in place, which is why the fault path is to reflash rather than to repair.
+An overlayfs root means updates are a deliberate act: remount read-write, change, reboot. That is the point, but it makes the box harder to fix in place, which is why the fault path is to reflash rather than to repair. Reflashing also destroys the data partition, so the share is a drop box for jobs and not where masters live.
+
+The hardware watchdog reboots if PID 1 stops responding. Mid-job that stops the G-code stream while the spindle is still turning, which ruins the workpiece. It is kept because by the time it fires the machine is already unresponsive, but it is a deliberate trade rather than a free safety net.

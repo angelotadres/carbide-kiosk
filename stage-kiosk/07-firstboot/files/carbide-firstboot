@@ -70,6 +70,7 @@ mount_data_partition() {
   mount "$KIOSK_DATA" || kiosk_die "could not mount $KIOSK_DATA"
   install -d -m 755 "$KIOSK_DATA/kiosk/config" "$KIOSK_DATA/kiosk/share"
   chown -R kiosk:kiosk "$KIOSK_DATA/kiosk"
+  install -d -m 2755 -o root -g systemd-journal "$KIOSK_DATA/log/journal"
 }
 
 enable_readonly_root() {

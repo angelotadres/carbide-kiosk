@@ -54,7 +54,6 @@ hostname=shopfloor
 samba_user=cnc
 samba_password=hunter2
 samba_share_name=gcode
-enable_ssh=0
 enable_mdns=0
 enable_ping=0
 CONF
@@ -77,7 +76,7 @@ check "input defaults to drop"   contains "$NFT" "policy drop;"
 check "forward defaults to drop" contains "$NFT" "chain forward"
 check "samba tcp is open"        contains "$NFT" "tcp dport { 139, 445 } accept"
 check "samba udp is open"        contains "$NFT" "udp dport { 137, 138 } accept"
-check "ssh stays closed"         absent   "$NFT" "tcp dport 22"
+check "ssh is not open"          absent   "$NFT" "tcp dport 22"
 check "mdns stays closed"        absent   "$NFT" "udp dport 5353"
 check "ping stays closed"        absent   "$NFT" "echo-request"
 
@@ -102,7 +101,10 @@ NFT="$WORK/open/etc/nftables.conf"
 UDEV="$WORK/open/etc/udev/rules.d/60-carbide-cnc.rules"
 
 check "open ruleset is valid"    nft -c -f "$NFT"
-check "ssh opens on request"     contains "$NFT" "tcp dport 22 accept"
+# There is no supported way to get a network shell. Someone adding
+# enable_ssh=1 by hand, or carrying it over from an older kiosk.conf, must
+# not be able to open port 22 on a machine that can move a spindle.
+check "enable_ssh cannot open port 22" absent "$NFT" "tcp dport 22"
 check "mdns opens on request"    contains "$NFT" "udp dport 5353 accept"
 check "ping opens on request"    contains "$NFT" "echo-request accept"
 check "extra vendor accepted"    contains "$UDEV" 'ATTRS{idVendor}=="1234"'

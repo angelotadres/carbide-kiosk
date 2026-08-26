@@ -174,9 +174,6 @@ configure_firewall() {
     printf '    udp sport 67 udp dport 68 accept\n'
     printf '    ip6 nexthdr icmpv6 icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-advert } accept\n'
 
-    if kiosk_enabled enable_ssh; then
-      printf '\n    # enable_ssh=1\n    tcp dport 22 accept\n'
-    fi
     if kiosk_enabled enable_mdns; then
       printf '\n    # enable_mdns=1\n    udp dport 5353 accept\n'
     fi
@@ -200,11 +197,9 @@ configure_firewall() {
   rendering && return 0
   nft -f "$ruleset" || kiosk_die "could not load the nftables ruleset"
 
-  if kiosk_enabled enable_ssh; then
-    systemctl enable --now ssh 2>/dev/null || kiosk_log "sshd is not installed"
-  else
-    systemctl disable --now ssh 2>/dev/null
-  fi
+  # There is no option to turn this on. A network shell onto a machine that
+  # can move a spindle is not a feature this image offers.
+  systemctl disable --now ssh 2>/dev/null
   if kiosk_enabled enable_mdns; then
     systemctl enable --now avahi-daemon 2>/dev/null || kiosk_log "avahi is not installed"
   else

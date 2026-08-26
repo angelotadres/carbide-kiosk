@@ -1,0 +1,8 @@
+[Unit]
+Description=Write the Carbide Motion Kiosk status file into the share
+After=carbide-kiosk-config.service smbd.service
+RequiresMountsFor=/data
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/carbide-kiosk-status

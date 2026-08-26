@@ -33,12 +33,9 @@ wifi_country=US
 
 # --- Inbound exceptions -------------------------------------------------
 #
-# Everything except Samba is dropped. Each of these opens exactly one more
-# thing; leave them at 0 unless you need them.
-
-# Opens 22/tcp and enables sshd. Off means the box cannot be logged into
-# over the network at all.
-enable_ssh=0
+# Everything except Samba is dropped, and there is deliberately no way to open
+# a shell over the network. This machine can move a spindle; reaching it should
+# require standing next to it. Each setting below opens exactly one more thing.
 
 # Opens 5353/udp so macOS Finder can discover the share by name.
 enable_mdns=0

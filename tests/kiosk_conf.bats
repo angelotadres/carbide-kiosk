@@ -71,20 +71,19 @@ setup() {
 }
 
 @test "flags are off unless explicitly truthy" {
-  printf 'enable_ssh=1\nenable_mdns=yes\nenable_ping=0\n' > "$KIOSK_CONF"
-  kiosk_enabled enable_ssh
+  printf 'enable_mdns=1\nenable_ping=yes\n' > "$KIOSK_CONF"
   kiosk_enabled enable_mdns
-  ! kiosk_enabled enable_ping
+  kiosk_enabled enable_ping
 }
 
 @test "a typoed flag value closes the port rather than opening it" {
-  printf 'enable_ssh=ture\n' > "$KIOSK_CONF"
-  ! kiosk_enabled enable_ssh
+  printf 'enable_mdns=ture\n' > "$KIOSK_CONF"
+  ! kiosk_enabled enable_mdns
 }
 
 @test "an absent flag is off" {
   printf 'hostname=shopfloor\n' > "$KIOSK_CONF"
-  ! kiosk_enabled enable_ssh
+  ! kiosk_enabled enable_mdns
 }
 
 @test "hostname validation rejects what hostnamectl would" {

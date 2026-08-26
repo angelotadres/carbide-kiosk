@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh the Carbide Motion Kiosk status file
+
+[Timer]
+# Once shortly after boot, then every five minutes. Frequent enough to be
+# current when someone goes looking, rare enough to be invisible on the card.
+OnBootSec=90s
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

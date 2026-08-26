@@ -1,0 +1,122 @@
+#!/bin/bash
+# Write the appliance's health report into the network share.
+#
+# This is the only diagnostic interface the machine has. There is no shell over
+# the network by design: a CNC that a third party can reach is a physical
+# hazard, not just a data one. If this file cannot answer the question, the
+# answer is a keyboard on the machine itself.
+set -uo pipefail
+
+CARBIDE_KIOSK_LIB="${CARBIDE_KIOSK_LIB:-/usr/local/lib/carbide-kiosk}"
+# shellcheck source=../../02-kiosk-session/files/usr/local/lib/carbide-kiosk/common.sh
+. "$CARBIDE_KIOSK_LIB/common.sh" || {
+  printf 'carbide-kiosk: cannot load %s/common.sh\n' "$CARBIDE_KIOSK_LIB" >&2
+  exit 1
+}
+
+STATUS_NAME="${STATUS_NAME:-CARBIDE-STATUS.txt}"
+
+# Nothing from kiosk.conf reaches this file except the hostname and the share
+# name. Everything else is observed state. This strips any secret that leaks
+# through a log line anyway, because the file lands somewhere readable.
+redact() {
+  local text secret key
+  text="$(cat)"
+  for key in samba_password wifi_password; do
+    secret="$(kiosk_get "$key")"
+    [ -n "$secret" ] || continue
+    text="${text//"$secret"/[redacted]}"
+  done
+  printf '%s\n' "$text"
+}
+
+yes_no() { if "$@" >/dev/null 2>&1; then printf 'yes\n'; else printf 'no\n'; fi; }
+
+cnc_state() {
+  local dev
+  if [ -e /dev/shapeoko ]; then
+    dev="$(readlink -f /dev/shapeoko)"
+    printf 'connected (%s)\n' "$dev"
+    return
+  fi
+  dev="$(ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null | head -n 1)"
+  if [ -n "$dev" ]; then
+    printf 'a serial device is present at %s but it is not recognised as a Shapeoko\n' "$dev"
+    printf '            add its vendor id to usb_vendor_ids in kiosk.conf\n'
+  else
+    printf 'not detected - check the USB cable and that the machine is powered on\n'
+  fi
+}
+
+# The classic Pi failure in a workshop is an underpowered supply, which shows
+# up as a mid-job crash rather than as anything obviously electrical.
+power_state() {
+  local raw bits=""
+  command -v vcgencmd >/dev/null 2>&1 || { printf 'unknown\n'; return; }
+  raw="$(vcgencmd get_throttled 2>/dev/null | cut -d= -f2)"
+  [ -n "$raw" ] || { printf 'unknown\n'; return; }
+  if [ "$raw" = "0x0" ]; then
+    printf 'healthy\n'
+    return
+  fi
+  (( (raw & 0x1) )) && bits="$bits under-voltage RIGHT NOW;"
+  (( (raw & 0x4) )) && bits="$bits throttled RIGHT NOW;"
+  (( (raw & 0x10000) )) && bits="$bits under-voltage has happened since boot;"
+  (( (raw & 0x40000) )) && bits="$bits throttling has happened since boot;"
+  printf 'PROBLEM (%s)%s\n' "$raw" "$bits"
+  printf '            an under-powered supply is the usual cause of mid-job crashes\n'
+}
+
+main() {
+  local share out tmp restarts
+  share="$(kiosk_get samba_share_name gcode)"
+  out="$KIOSK_DATA/$share/$STATUS_NAME"
+  tmp="$out.tmp"
+
+  [ -d "$KIOSK_DATA/$share" ] || kiosk_die "share directory $KIOSK_DATA/$share is missing"
+
+  restarts="$(systemctl show carbide-kiosk.service -p NRestarts --value 2>/dev/null)"
+
+  {
+    printf 'Carbide Motion Kiosk - status\n'
+    printf 'Written automatically. Editing this file achieves nothing.\n\n'
+
+    printf 'Updated:         %s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')"
+    printf 'Machine name:    %s\n' "$(hostname)"
+    printf 'Running since:   %s\n' "$(uptime -p 2>/dev/null | sed 's/^up //')"
+    printf '\n'
+
+    printf 'IS IT WORKING\n'
+    printf '  Carbide Motion: %s\n' "$(yes_no systemctl is-active --quiet carbide-kiosk.service)"
+    printf '  Times it has restarted since boot: %s\n' "${restarts:-unknown}"
+    printf '  File sharing:   %s\n' "$(yes_no systemctl is-active --quiet smbd.service)"
+    printf '  Shapeoko:       %s' "$(cnc_state)"
+    printf '  Power supply:   %s' "$(power_state)"
+    printf '\n'
+
+    printf 'ROOM LEFT\n'
+    df -h "$KIOSK_DATA" 2>/dev/null | awk 'NR==2 {printf "  Space for files: %s free of %s (%s used)\n", $4, $2, $5}'
+    if command -v vcgencmd >/dev/null 2>&1; then
+      printf '  Temperature:     %s\n' "$(vcgencmd measure_temp 2>/dev/null | cut -d= -f2)"
+    fi
+    printf '\n'
+
+    printf 'RECENT PROBLEMS\n'
+    printf '  Anything below is worth reading. An empty list is good news.\n\n'
+    journalctl -p err -b -n 25 --no-pager -o short-iso 2>/dev/null \
+      | sed 's/^/  /' || printf '  (no log available)\n'
+    printf '\n'
+
+    printf 'PREVIOUS RUN\n'
+    printf '  Why the machine last restarted, if it was not you switching it off.\n\n'
+    journalctl -p err -b -1 -n 15 --no-pager -o short-iso 2>/dev/null \
+      | sed 's/^/  /' || printf '  (no earlier boot recorded)\n'
+  } | redact > "$tmp"
+
+  chmod 0664 "$tmp"
+  mv -f "$tmp" "$out"
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main "$@"
+fi

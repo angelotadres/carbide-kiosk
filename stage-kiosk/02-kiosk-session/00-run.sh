@@ -10,6 +10,9 @@ install -m 644 files/carbide-kiosk-config.service \
 	"${ROOTFS_DIR}/etc/systemd/system/carbide-kiosk-config.service"
 install -m 644 files/carbide-kiosk.service \
 	"${ROOTFS_DIR}/etc/systemd/system/carbide-kiosk.service"
+install -d -m 755 "${ROOTFS_DIR}/etc/systemd/system/getty@tty2.service.d"
+install -m 644 files/getty-autologin.conf \
+	"${ROOTFS_DIR}/etc/systemd/system/getty@tty2.service.d/autologin.conf"
 
 # xinit from a systemd service is not a console login, so Xorg needs telling.
 install -d -m 755 "${ROOTFS_DIR}/etc/X11"
@@ -25,11 +28,16 @@ if ! id -u kiosk >/dev/null 2>&1; then
 fi
 usermod -aG video,render,input,tty,dialout,plugdev kiosk
 
-# pi-gen had to be given a password to build a headless image. Lock it: the
-# session is started by systemd, which does not authenticate, so the account
-# never needs a usable password. This is what stops the published image from
-# shipping a credential.
-passwd -l kiosk
+# pi-gen had to be given a password to build a headless image. Replace it with
+# '*', which no password can ever match. The session is started by systemd and
+# the rescue console by agetty --autologin, neither of which authenticates, so
+# the account never needs a usable password. This is what stops the published
+# image from shipping a credential.
+usermod -p '*' kiosk
+
+# Ctrl+Alt+F2 gives a console to someone physically at the machine. There is
+# no network shell at all, by design.
+systemctl enable getty@tty2.service
 
 # Carbide Motion keeps its settings under the home directory. The root
 # filesystem is read-only, so both paths live on the data partition.

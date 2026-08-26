@@ -11,7 +11,11 @@ install -m 644 files/carbidemotion.deb "${ROOTFS_DIR}/tmp/carbidemotion.deb"
 
 on_chroot << 'CHROOT'
 set -e
-apt-get install -y --no-install-recommends /tmp/carbidemotion.deb
+# 00-packages already installed every Qt5 dependency the package declares, so
+# there is nothing for apt to resolve. dpkg takes the file directly; apt
+# refuses it on the command line.
+dpkg -i /tmp/carbidemotion.deb || apt-get -y --fix-broken install
 rm -f /tmp/carbidemotion.deb
 test -x /usr/local/bin/carbidemotion
+dpkg-query -W -f='${Status}\n' carbidemotion | grep -q '^install ok installed$'
 CHROOT
