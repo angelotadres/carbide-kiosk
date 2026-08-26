@@ -1,9 +1,11 @@
 [Unit]
 Description=Apply Carbide Motion Kiosk runtime configuration
 Documentation=https://github.com/angelotadres/carbide-kiosk
-After=local-fs.target network-pre.target carbide-firstboot.service
-Wants=network-pre.target
-Before=nftables.service smbd.service nmbd.service carbide-kiosk.service
+# Not network-pre.target: nftables.service is ordered before it, and this
+# unit is ordered before nftables, which is a cycle systemd resolves by
+# silently dropping edges.
+After=local-fs.target carbide-firstboot.service
+Before=nftables.service smbd.service nmbd.service ssh.service carbide-kiosk.service
 RequiresMountsFor=/boot/firmware /data
 ConditionPathExists=/boot/firmware/kiosk.conf
 

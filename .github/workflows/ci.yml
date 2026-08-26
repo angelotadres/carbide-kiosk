@@ -38,7 +38,7 @@ jobs:
       - name: Install bats
         run: sudo apt-get update && sudo apt-get install -y bats
       - name: Run the unit suites
-        run: bats tests/select_build.bats tests/kiosk_conf.bats tests/status_redaction.bats
+        run: bats tests/select_build.bats tests/kiosk_conf.bats tests/status_redaction.bats tests/partition_start.bats
 
   render:
     name: generated configuration

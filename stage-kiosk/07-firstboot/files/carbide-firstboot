@@ -24,8 +24,24 @@ boot_device() {
   printf '/dev/%s\n' "$part"
 }
 
+# Where the new partition must start: one MiB past the end of the last
+# existing one. Reads parted's machine-readable output, so it is testable
+# against captured output without a disk.
+data_partition_start_mb() {
+  awk -F: '/^[0-9]+:/ { gsub(/MiB/, "", $3); if ($3 + 0 > end) end = $3 + 0 }
+           END { if (end > 0) print int(end) + 1 }'
+}
+
+# mmcblk0 needs a p before the number; sda does not.
+partition_device() {
+  case "$1" in
+    *[0-9]) printf '%sp%s\n' "$1" "$2" ;;
+    *)      printf '%s%s\n'  "$1" "$2" ;;
+  esac
+}
+
 create_data_partition() {
-  local dev free_mb part
+  local dev start_mb part number size_mb
 
   if blkid -L "$DATA_LABEL" >/dev/null 2>&1; then
     kiosk_log "data partition already exists"
@@ -35,31 +51,35 @@ create_data_partition() {
   dev="$(boot_device)"
   [ -b "$dev" ] || kiosk_die "could not identify the boot device"
 
-  # pi-gen's own resize step has already grown the root filesystem, so free
-  # space here is whatever the card has beyond the image.
-  free_mb="$(parted -sm "$dev" unit MiB print free \
-    | awk -F: '$NF ~ /free/ {gsub(/MiB/,"",$4); if ($4+0 > m) m = $4+0} END {print int(m)}')"
+  start_mb="$(parted -sm "$dev" unit MiB print | data_partition_start_mb)"
+  [ -n "$start_mb" ] || kiosk_die "could not read the partition table on $dev"
 
-  if [ "${free_mb:-0}" -lt "$DATA_MIN_MB" ]; then
-    kiosk_die "only ${free_mb:-0} MiB free, need $DATA_MIN_MB MiB for the share; use a larger card"
-  fi
+  number="$(( $(parted -sm "$dev" unit MiB print | grep -c '^[0-9]\+:') + 1 ))"
 
-  parted -s "$dev" mkpart primary ext4 100% 100% 2>/dev/null \
-    || parted -s -- "$dev" mkpart primary ext4 "-${free_mb}MiB" 100% \
-    || kiosk_die "could not create the data partition"
-  partprobe "$dev"
+  # Explicit start to 100%. An earlier version used "100% 100%", which parted
+  # accepts and turns into a 1 MiB partition at the very end of the card,
+  # stranding everything in between.
+  parted -s -a optimal "$dev" mkpart primary ext4 "${start_mb}MiB" 100% \
+    || kiosk_die "could not create the data partition on $dev"
+  partprobe "$dev" || true
   udevadm settle
+  sleep 2
 
-  part="$(lsblk -lno NAME "$dev" | tail -n 1)"
-  part="/dev/$part"
+  part="$(partition_device "$dev" "$number")"
   [ -b "$part" ] || kiosk_die "new partition $part did not appear"
 
-  # No lazy init: a half-initialised filesystem plus a power cut is exactly
-  # the failure this image exists to avoid.
-  mkfs.ext4 -F -L "$DATA_LABEL" -E lazy_itable_init=0,lazy_journal_init=0 "$part" \
+  # Check the partition itself, not the free space it was cut from. Reporting
+  # intended size rather than actual size is what hid this bug last time.
+  size_mb="$(( $(blockdev --getsize64 "$part") / 1048576 ))"
+  [ "$size_mb" -ge "$DATA_MIN_MB" ] \
+    || kiosk_die "data partition is only ${size_mb} MiB, need at least $DATA_MIN_MB MiB"
+
+  # -m 0: no reserved blocks. This holds G-code, not system files, and 5% of
+  # a large card is gigabytes given away for nothing.
+  mkfs.ext4 -F -q -L "$DATA_LABEL" -m 0 "$part" \
     || kiosk_die "could not format $part"
 
-  kiosk_log "created data partition $part (${free_mb} MiB)"
+  kiosk_log "created data partition $part (${size_mb} MiB, starting at ${start_mb} MiB)"
 }
 
 mount_data_partition() {
@@ -104,4 +124,6 @@ main() {
   systemctl reboot
 }
 
-main "$@"
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main "$@"
+fi
