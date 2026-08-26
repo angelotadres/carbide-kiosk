@@ -7,15 +7,18 @@ if [ ! -f files/carbidemotion.deb ]; then
 	exit 1
 fi
 
-install -m 644 files/carbidemotion.deb "${ROOTFS_DIR}/tmp/carbidemotion.deb"
+# Not /tmp: on_chroot mounts a tmpfs over the rootfs /tmp, which hides
+# anything staged there before the call.
+install -d -m 700 "${ROOTFS_DIR}/root"
+install -m 644 files/carbidemotion.deb "${ROOTFS_DIR}/root/carbidemotion.deb"
 
 on_chroot << 'CHROOT'
 set -e
 # 00-packages already installed every Qt5 dependency the package declares, so
 # there is nothing for apt to resolve. dpkg takes the file directly; apt
 # refuses it on the command line.
-dpkg -i /tmp/carbidemotion.deb || apt-get -y --fix-broken install
-rm -f /tmp/carbidemotion.deb
+dpkg -i /root/carbidemotion.deb || apt-get -y --fix-broken install
+rm -f /root/carbidemotion.deb
 test -x /usr/local/bin/carbidemotion
 dpkg-query -W -f='${Status}\n' carbidemotion | grep -q '^install ok installed$'
 CHROOT

@@ -133,7 +133,7 @@ carbide-kiosk/
 ├── scripts/
 │   └── fetch-carbide-motion.sh
 ├── stage-kiosk/              custom pi-gen stage
-│   ├── 00-packages
+│   ├── 00-base/00-packages
 │   ├── 01-carbide-motion/
 │   ├── 02-kiosk-session/
 │   ├── 03-samba/
@@ -163,7 +163,7 @@ carbide-kiosk/
 
 ### Image stage
 
-- [x] `stage-kiosk/00-packages`: Qt5 dependencies, X server, `matchbox-window-manager`, `unclutter`, `samba`, `nftables`
+- [x] `stage-kiosk/00-base/00-packages`: Qt5 dependencies, X server, `matchbox-window-manager`, `unclutter`, `samba`, `nftables`
 - [x] `01-carbide-motion`: install the `.deb`, symlink settings into `/data`
 - [x] `02-kiosk-session`: `kiosk` user, `Xwrapper.config`, X session script, `carbide-kiosk.service`, `carbide-kiosk-config.service`
 - [x] `03-samba`: enable `smbd`/`nmbd`; `smb.conf` itself is generated each boot, no guest access

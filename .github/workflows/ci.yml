@@ -96,6 +96,16 @@ jobs:
           test -f pi-gen/config
           test -f pi-gen/stage3/SKIP
           grep -q "STAGE_LIST='stage0 stage1 stage2 stage-kiosk'" pi-gen/config
+      - name: Confirm the stage matches pi-gen's contract
+        run: |
+          # pi-gen only reads *-packages inside a sub-stage directory. A file
+          # at the stage root is silently ignored, and the packages never
+          # get installed.
+          ! ls stage-kiosk/*-packages 2>/dev/null
+          test -f stage-kiosk/00-base/00-packages
+          # on_chroot mounts a tmpfs over the rootfs /tmp, so anything staged
+          # there before the call disappears.
+          ! grep -rn 'ROOTFS_DIR}/tmp' stage-kiosk/
       - name: Confirm no known credential ships in the image
         run: |
           # pi-gen requires a first-user password for a headless build; it
