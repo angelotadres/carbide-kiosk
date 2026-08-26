@@ -8,7 +8,9 @@ start-minimized=false
 [org/onboard/window]
 docking-enabled=false
 force-to-top=true
-window-handles='M'
+# A full border of grab handles, not just the small move button: on a touch
+# panel a one-button target is hard to hit with a finger.
+window-handles='NSEWnsewM'
 enable-inactive-transparency=false
 
 [org/onboard/auto-show]
