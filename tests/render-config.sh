@@ -23,6 +23,7 @@ check() {
 }
 
 contains() { grep -qF -- "$2" "$1"; }
+not_in_tree() { ! grep -rqF -- "$2" "$1" 2>/dev/null; }
 absent()   { ! grep -qF -- "$2" "$1"; }
 
 # Render one kiosk.conf and echo the output root. Returns the generator's exit
@@ -176,8 +177,9 @@ CONF
 check "password config renders"  render "$WORK/sshpw.conf" "$WORK/sshpw"
 check "port 22 opens with a password" contains "$WORK/sshpw/etc/nftables.conf" "tcp dport 22 ct state new"
 check "password login allowed"   contains "$WORK/sshpw/etc/ssh/sshd_config.d/carbide-kiosk.conf" "PasswordAuthentication yes"
-check "ssh password is not in the share status path" \
-  bash -c '! grep -rq troubleshooting "$1/etc/samba" 2>/dev/null' _ "$WORK/sshpw"
+# The ssh password is applied with chpasswd, never written to a file. It must
+# not turn up anywhere in the generated configuration.
+check "ssh password is written nowhere" not_in_tree "$WORK/sshpw" "troubleshooting"
 
 printf 'render-config: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
