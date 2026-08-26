@@ -1,0 +1,16 @@
+[Unit]
+Description=Carbide Motion Kiosk first-boot setup
+Documentation=https://github.com/angelotadres/carbide-kiosk
+After=local-fs.target
+Before=carbide-kiosk-config.service carbide-kiosk.service
+ConditionPathExists=!/data/kiosk
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/carbide-firstboot
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

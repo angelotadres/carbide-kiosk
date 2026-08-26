@@ -1,0 +1,97 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Lint every shell script
+        # SC1091: sourced paths resolve on the image, not in the checkout.
+        # SC2154: pi-gen supplies ROOTFS_DIR and friends to stage scripts.
+        run: |
+          mapfile -t scripts < <(
+            find . -path ./pi-gen -prune -o -type f \
+              \( -name '*.sh' -o -name '00-run.sh' -o -name 'carbide-*' \) -print \
+              | grep -vE '\.service$|\.conf$'
+          )
+          printf '%s\n' "${scripts[@]}"
+          shellcheck -x -e SC1091,SC2154 "${scripts[@]}"
+
+  unit:
+    name: bats
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install bats
+        run: sudo apt-get update && sudo apt-get install -y bats
+      - name: Run the unit suites
+        run: bats tests/select_build.bats tests/kiosk_conf.bats
+
+  render:
+    name: generated configuration
+    runs-on: ubuntu-latest
+    container: debian:bookworm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the parsers that must accept our output
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends samba-common-bin nftables
+      - name: Render and validate smb.conf and the nftables ruleset
+        run: bash tests/render-config.sh
+
+  dependencies:
+    name: armhf dependency resolution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - name: Fetch Carbide Motion
+        run: ./scripts/fetch-carbide-motion.sh deb
+      - name: Resolve the package list against Bookworm armhf
+        # The Carbide Motion package declares pre-t64 Qt5 names. This job is
+        # what catches the day a base-image change makes them unsatisfiable.
+        run: |
+          docker run --rm --platform linux/arm/v7 \
+            -v "$PWD:/work" -w /work arm32v7/debian:bookworm \
+            bash -c '
+              set -e
+              apt-get update
+              grep -vE "^\s*(#|$)" stage-kiosk/00-packages | xargs \
+                apt-get install --simulate --no-install-recommends
+              apt-get install --simulate ./deb/carbidemotion-*.deb
+            '
+
+  image:
+    name: build image
+    needs: [lint, unit, render, dependencies]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reclaim runner disk for the build
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h /
+      - name: Build
+        run: ./build.sh
+      - name: Checksum
+        run: cd deploy && sha256sum ./* > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: carbide-kiosk-image
+          path: deploy/
+          retention-days: 14

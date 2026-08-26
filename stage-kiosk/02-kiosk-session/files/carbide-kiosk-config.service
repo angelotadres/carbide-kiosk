@@ -1,0 +1,18 @@
+[Unit]
+Description=Apply Carbide Motion Kiosk runtime configuration
+Documentation=https://github.com/angelotadres/carbide-kiosk
+After=local-fs.target network-pre.target carbide-firstboot.service
+Wants=network-pre.target
+Before=nftables.service smbd.service nmbd.service carbide-kiosk.service
+RequiresMountsFor=/boot/firmware /data
+ConditionPathExists=/boot/firmware/kiosk.conf
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/carbide-kiosk-config
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,258 @@
+#!/bin/bash
+# Regenerate all runtime configuration from kiosk.conf.
+#
+# The root filesystem is read-only with a tmpfs overlay, so everything this
+# script writes under /etc is discarded at shutdown. That is deliberate: the
+# single source of truth is kiosk.conf on the boot partition, and editing it
+# from any machine with an SD card reader is the whole administration story.
+set -uo pipefail
+
+# Fail closed: a half-configured firewall or share is worse than none.
+CARBIDE_KIOSK_LIB="${CARBIDE_KIOSK_LIB:-/usr/local/lib/carbide-kiosk}"
+# shellcheck source=../lib/carbide-kiosk/common.sh
+. "$CARBIDE_KIOSK_LIB/common.sh" || {
+  printf 'carbide-kiosk: cannot load %s/common.sh\n' "$CARBIDE_KIOSK_LIB" >&2
+  exit 1
+}
+
+# The share owner's UID is fixed so that renaming the account in kiosk.conf
+# does not orphan every file already on the data partition.
+SHARE_UID=1500
+SHARE_GID=1500
+
+# Render-only mode writes and validates every generated file but applies
+# nothing, so CI can check the real generator instead of a copy of it.
+RENDER_ONLY="${CARBIDE_KIOSK_RENDER_ONLY:-0}"
+OUT="${CARBIDE_KIOSK_ROOT:-}"
+
+rendering() { [ "$RENDER_ONLY" = "1" ]; }
+outfile() { printf '%s%s\n' "$OUT" "$1"; }
+
+configure_hostname() {
+  local name
+  name="$(kiosk_get hostname carbide-kiosk)"
+  if ! kiosk_valid_hostname "$name"; then
+    kiosk_log "hostname '$name' is not valid, keeping carbide-kiosk"
+    name="carbide-kiosk"
+  fi
+  printf '%s\n' "$name" > "$(outfile /etc/hostname)"
+  printf '127.0.1.1\t%s\n' "$name" >> "$(outfile /etc/hosts)"
+  rendering || hostnamectl set-hostname "$name"
+}
+
+configure_wifi() {
+  local ssid psk country conn
+  ssid="$(kiosk_get wifi_ssid)"
+  [ -n "$ssid" ] || { kiosk_log "no wifi_ssid set, assuming wired"; return 0; }
+  psk="$(kiosk_get wifi_password)"
+  country="$(kiosk_get wifi_country US)"
+
+  rendering || raspi-config nonint do_wifi_country "$country" \
+    || kiosk_log "could not set wifi country"
+
+  conn="$(outfile /etc/NetworkManager/system-connections/carbide-kiosk.nmconnection)"
+  install -d -m 700 "$(outfile /etc/NetworkManager/system-connections)"
+  {
+    printf '[connection]\nid=carbide-kiosk\ntype=wifi\nautoconnect=true\n\n'
+    printf '[wifi]\nmode=infrastructure\nssid=%s\n\n' "$ssid"
+    if [ -n "$psk" ]; then
+      printf '[wifi-security]\nkey-mgmt=wpa-psk\npsk=%s\n\n' "$psk"
+    fi
+    printf '[ipv4]\nmethod=auto\n\n[ipv6]\nmethod=auto\n'
+  } > "$conn"
+  chmod 600 "$conn"
+  rendering || nmcli connection reload || kiosk_log "NetworkManager reload failed"
+}
+
+configure_share_account() {
+  local user password
+  user="$(kiosk_get samba_user)"
+  password="$(kiosk_get samba_password)"
+
+  if [ -z "$user" ] || [ -z "$password" ]; then
+    kiosk_die "samba_user and samba_password are required in $KIOSK_CONF; the share will not start"
+  fi
+
+  rendering && return 0
+
+  getent group "$SHARE_GID" >/dev/null || groupadd --gid "$SHARE_GID" cncshare
+  if ! getent passwd "$user" >/dev/null; then
+    useradd --uid "$SHARE_UID" --gid "$SHARE_GID" --no-create-home \
+            --shell /usr/sbin/nologin "$user" \
+      || kiosk_die "could not create share account '$user'"
+  fi
+
+  # Set unconditionally: kiosk.conf is authoritative, and the Samba account
+  # database lives on the volatile overlay anyway.
+  printf '%s\n%s\n' "$password" "$password" | smbpasswd -s -a "$user" >/dev/null \
+    || kiosk_die "could not set the Samba password for '$user'"
+  smbpasswd -e "$user" >/dev/null
+}
+
+configure_samba() {
+  local user share min_proto encrypt
+  user="$(kiosk_get samba_user)"
+  share="$(kiosk_get samba_share_name gcode)"
+  min_proto="$(kiosk_get samba_min_protocol SMB3)"
+  encrypt="$(kiosk_get samba_encrypt required)"
+
+  if rendering; then
+    install -d -m 755 "$(outfile /etc/samba)"
+  else
+    install -d -m 2770 -o "$SHARE_UID" -g "$SHARE_GID" "$KIOSK_DATA/$share"
+  fi
+
+  cat > "$(outfile /etc/samba/smb.conf)" <<SMB
+# Generated from $KIOSK_CONF on every boot. Edits here do not survive a reboot.
+[global]
+   workgroup = WORKGROUP
+   server string = Carbide Motion Kiosk
+   server role = standalone server
+   security = user
+   map to guest = never
+   guest ok = no
+   restrict anonymous = 2
+
+   server min protocol = $min_proto
+   smb encrypt = $encrypt
+
+   # Interfaces are not restricted here; nftables is the single place where
+   # reachability is decided.
+   disable netbios = no
+   dns proxy = no
+
+   load printers = no
+   printing = bsd
+   printcap name = /dev/null
+   disable spoolss = yes
+
+   log file = /var/log/samba/log.%m
+   max log size = 1000
+   logging = file
+
+   # A CNC file that is half-written when the power goes is worse than one
+   # that never arrived, so writes are not allowed to sit in cache.
+   strict sync = yes
+   sync always = yes
+
+[$share]
+   comment = G-code for the Shapeoko
+   path = $KIOSK_DATA/$share
+   browseable = yes
+   read only = no
+   valid users = $user
+   force user = $user
+   force group = cncshare
+   create mask = 0664
+   directory mask = 2775
+   veto files = /.DS_Store/._*/.Spotlight-V100/.Trashes/Thumbs.db/
+   delete veto files = yes
+SMB
+
+  testparm -s "$(outfile /etc/samba/smb.conf)" >/dev/null 2>&1 \
+    || kiosk_die "generated smb.conf is not valid"
+}
+
+configure_firewall() {
+  local ruleset
+  ruleset="$(outfile /etc/nftables.conf)"
+
+  {
+    printf '#!/usr/sbin/nft -f\n'
+    printf '# Generated from %s on every boot.\n\n' "$KIOSK_CONF"
+    printf 'flush ruleset\n\n'
+    printf 'table inet filter {\n'
+    printf '  chain input {\n'
+    printf '    type filter hook input priority filter; policy drop;\n\n'
+    printf '    iif lo accept\n'
+    printf '    ct state established,related accept\n'
+    printf '    ct state invalid drop\n\n'
+    printf '    # Samba: the one service this image deliberately exposes.\n'
+    printf '    tcp dport { 139, 445 } accept\n'
+    printf '    udp dport { 137, 138 } accept\n\n'
+    printf '    # DHCP replies, needed to hold an address at all.\n'
+    printf '    udp sport 67 udp dport 68 accept\n'
+    printf '    ip6 nexthdr icmpv6 icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-advert } accept\n'
+
+    if kiosk_enabled enable_ssh; then
+      printf '\n    # enable_ssh=1\n    tcp dport 22 accept\n'
+    fi
+    if kiosk_enabled enable_mdns; then
+      printf '\n    # enable_mdns=1\n    udp dport 5353 accept\n'
+    fi
+    if kiosk_enabled enable_ping; then
+      printf '\n    # enable_ping=1\n'
+      printf '    icmp type echo-request accept\n'
+      printf '    icmpv6 type echo-request accept\n'
+    fi
+
+    printf '  }\n\n'
+    printf '  chain forward {\n'
+    printf '    type filter hook forward priority filter; policy drop;\n'
+    printf '  }\n\n'
+    printf '  chain output {\n'
+    printf '    type filter hook output priority filter; policy accept;\n'
+    printf '  }\n'
+    printf '}\n'
+  } > "$ruleset"
+
+  nft -c -f "$ruleset" || kiosk_die "generated nftables ruleset is not valid"
+  rendering && return 0
+  nft -f "$ruleset" || kiosk_die "could not load the nftables ruleset"
+
+  if kiosk_enabled enable_ssh; then
+    systemctl enable --now ssh 2>/dev/null || kiosk_log "sshd is not installed"
+  else
+    systemctl disable --now ssh 2>/dev/null
+  fi
+  if kiosk_enabled enable_mdns; then
+    systemctl enable --now avahi-daemon 2>/dev/null || kiosk_log "avahi is not installed"
+  else
+    systemctl disable --now avahi-daemon 2>/dev/null
+  fi
+}
+
+configure_cnc_udev() {
+  local rule extra id
+  rule="$(outfile /etc/udev/rules.d/60-carbide-cnc.rules)"
+  # Seeded with the vendors Carbide 3D and Shapeoko-family boards are known to
+  # present. kiosk.conf extends this without rebuilding the image.
+  local vendors="03eb 2341 2a03 1a86 0403 10c4"
+
+  extra="$(kiosk_get usb_vendor_ids)"
+  for id in $extra; do
+    if kiosk_valid_usb_id "$id"; then
+      vendors="$vendors $id"
+    else
+      kiosk_log "ignoring malformed usb_vendor_ids entry '$id'"
+    fi
+  done
+
+  {
+    printf '# Generated from %s on every boot.\n' "$KIOSK_CONF"
+    for id in $vendors; do
+      printf 'SUBSYSTEM=="tty", ATTRS{idVendor}=="%s", SYMLINK+="shapeoko", GROUP="dialout", MODE="0660", TAG+="uaccess"\n' "$id"
+    done
+  } > "$rule"
+
+  rendering && return 0
+  udevadm control --reload-rules || kiosk_log "udev rule reload failed"
+  udevadm trigger --subsystem-match=tty --action=add || true
+}
+
+main() {
+  [ -r "$KIOSK_CONF" ] || kiosk_die "$KIOSK_CONF is missing; nothing can be configured"
+  if rendering; then
+    [ -n "$OUT" ] || kiosk_die "render-only mode needs CARBIDE_KIOSK_ROOT"
+    install -d -m 755 "$OUT/etc/udev/rules.d"
+  fi
+  configure_hostname
+  configure_wifi
+  configure_share_account
+  configure_samba
+  configure_firewall
+  configure_cnc_udev
+  kiosk_log "runtime configuration applied"
+}
+
+main "$@"

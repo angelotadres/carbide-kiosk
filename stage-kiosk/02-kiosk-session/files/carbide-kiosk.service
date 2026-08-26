@@ -1,0 +1,27 @@
+[Unit]
+Description=Carbide Motion kiosk session
+Documentation=https://github.com/angelotadres/carbide-kiosk
+After=carbide-kiosk-config.service systemd-user-sessions.service
+Requires=carbide-kiosk-config.service
+RequiresMountsFor=/data
+Conflicts=getty@tty1.service
+After=getty@tty1.service
+
+[Service]
+Type=simple
+User=kiosk
+Group=kiosk
+PAMName=login
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+ExecStart=/usr/bin/xinit /usr/local/bin/carbide-kiosk-xsession -- :0 vt1 -keeptty -nolisten tcp
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

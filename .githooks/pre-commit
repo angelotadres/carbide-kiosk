@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Run the checks CI will run, before the commit rather than after.
+#
+# Installed by scripts/install-hooks.sh. CI remains the authoritative gate:
+# this hook is a convenience, and it is deliberately noisy when it cannot
+# actually check anything rather than passing quietly.
+set -uo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+ran=0
+failed=0
+
+scripts() {
+  find . -path ./pi-gen -prune -o -type f \
+    \( -name '*.sh' -o -name '00-run.sh' -o -name 'carbide-*' \) -print \
+    | grep -vE '\.service$|\.conf$'
+}
+
+run_in_docker() {
+  docker info >/dev/null 2>&1 || return 1
+  docker run --rm -v "$REPO_ROOT:/work" -w /work "$@"
+}
+
+# --- shellcheck ---------------------------------------------------------
+
+if command -v shellcheck >/dev/null 2>&1; then
+  ran=1
+  # shellcheck disable=SC2046
+  shellcheck -x -e SC1091,SC2154 $(scripts) || failed=1
+elif run_in_docker koalaman/shellcheck:stable \
+       -x -e SC1091,SC2154 $(scripts) 2>/dev/null; then
+  ran=1
+else
+  printf 'pre-commit: shellcheck unavailable (no binary, no Docker)\n' >&2
+fi
+
+# --- unit suites --------------------------------------------------------
+
+if command -v bats >/dev/null 2>&1; then
+  ran=1
+  bats tests/select_build.bats tests/kiosk_conf.bats || failed=1
+elif run_in_docker bats/bats:latest \
+       tests/select_build.bats tests/kiosk_conf.bats; then
+  ran=1
+else
+  printf 'pre-commit: bats unavailable (no binary, no Docker)\n' >&2
+fi
+
+if [ "$ran" -eq 0 ]; then
+  printf 'pre-commit: no checks could run. Install shellcheck and bats, or\n' >&2
+  printf 'pre-commit: start Docker, so this hook is worth having.\n' >&2
+  exit 1
+fi
+
+exit "$failed"

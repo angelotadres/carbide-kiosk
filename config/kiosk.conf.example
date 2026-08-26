@@ -1,0 +1,63 @@
+# Carbide Motion Kiosk runtime configuration.
+#
+# Copy this file to the boot partition of a flashed card as "kiosk.conf" and
+# edit it before first boot. Any machine that can read an SD card can change
+# these values; nothing here requires a keyboard on the Pi.
+#
+# Values are shell-style key=value. Quote anything containing spaces.
+
+# --- Identity -----------------------------------------------------------
+
+hostname=carbide-kiosk
+
+# --- Samba (required) ---------------------------------------------------
+#
+# The share does not come up without an account. There is no guest access.
+
+samba_user=cnc
+samba_password=
+samba_share_name=gcode
+
+# Transport hardening. "required" refuses unencrypted clients; drop to
+# "desired" only if something on the shop network cannot negotiate it.
+samba_min_protocol=SMB3
+samba_encrypt=required
+
+# --- Network ------------------------------------------------------------
+#
+# Leave the WiFi values empty for a wired connection.
+
+wifi_ssid=
+wifi_password=
+wifi_country=US
+
+# --- Inbound exceptions -------------------------------------------------
+#
+# Everything except Samba is dropped. Each of these opens exactly one more
+# thing; leave them at 0 unless you need them.
+
+# Opens 22/tcp and enables sshd. Off means the box cannot be logged into
+# over the network at all.
+enable_ssh=0
+
+# Opens 5353/udp so macOS Finder can discover the share by name.
+enable_mdns=0
+
+# Answers ICMP echo. Useful when diagnosing a Pi that will not appear.
+enable_ping=0
+
+# --- CNC controller -----------------------------------------------------
+#
+# USB vendor IDs treated as a CNC controller, in addition to the built-in
+# list. Space-separated four-digit hex, as printed by lsusb.
+
+usb_vendor_ids=
+
+# --- Display ------------------------------------------------------------
+#
+# Rotation is one of: normal, left, right, inverted.
+# Resolution is left empty to autodetect; set it for panels that misreport.
+# Carbide Motion requires at least 1280x1024.
+
+screen_rotation=normal
+screen_resolution=

@@ -1,0 +1,93 @@
+#!/bin/bash
+# One-time setup: carve the data partition out of the remaining card space,
+# then switch the root filesystem to read-only overlayfs and reboot.
+#
+# Everything else is handled by carbide-kiosk-config on every boot. This script
+# only does the two things that cannot be repeated.
+set -uo pipefail
+
+# Fail closed: a half-configured firewall or share is worse than none.
+CARBIDE_KIOSK_LIB="${CARBIDE_KIOSK_LIB:-/usr/local/lib/carbide-kiosk}"
+# shellcheck source=../../02-kiosk-session/files/usr/local/lib/carbide-kiosk/common.sh
+. "$CARBIDE_KIOSK_LIB/common.sh" || {
+  printf 'carbide-kiosk: cannot load %s/common.sh\n' "$CARBIDE_KIOSK_LIB" >&2
+  exit 1
+}
+
+DATA_LABEL="CARBIDEDATA"
+DATA_MIN_MB="${DATA_PARTITION_MIN_MB:-2048}"
+
+boot_device() {
+  local root part
+  root="$(findmnt -no SOURCE /)"
+  part="$(lsblk -no PKNAME "$root")"
+  printf '/dev/%s\n' "$part"
+}
+
+create_data_partition() {
+  local dev free_mb part
+
+  if blkid -L "$DATA_LABEL" >/dev/null 2>&1; then
+    kiosk_log "data partition already exists"
+    return 0
+  fi
+
+  dev="$(boot_device)"
+  [ -b "$dev" ] || kiosk_die "could not identify the boot device"
+
+  # pi-gen's own resize step has already grown the root filesystem, so free
+  # space here is whatever the card has beyond the image.
+  free_mb="$(parted -sm "$dev" unit MiB print free \
+    | awk -F: '$NF ~ /free/ {gsub(/MiB/,"",$4); if ($4+0 > m) m = $4+0} END {print int(m)}')"
+
+  if [ "${free_mb:-0}" -lt "$DATA_MIN_MB" ]; then
+    kiosk_die "only ${free_mb:-0} MiB free, need $DATA_MIN_MB MiB for the share; use a larger card"
+  fi
+
+  parted -s "$dev" mkpart primary ext4 100% 100% 2>/dev/null \
+    || parted -s -- "$dev" mkpart primary ext4 "-${free_mb}MiB" 100% \
+    || kiosk_die "could not create the data partition"
+  partprobe "$dev"
+  udevadm settle
+
+  part="$(lsblk -lno NAME "$dev" | tail -n 1)"
+  part="/dev/$part"
+  [ -b "$part" ] || kiosk_die "new partition $part did not appear"
+
+  # No lazy init: a half-initialised filesystem plus a power cut is exactly
+  # the failure this image exists to avoid.
+  mkfs.ext4 -F -L "$DATA_LABEL" -E lazy_itable_init=0,lazy_journal_init=0 "$part" \
+    || kiosk_die "could not format $part"
+
+  kiosk_log "created data partition $part (${free_mb} MiB)"
+}
+
+mount_data_partition() {
+  install -d -m 755 "$KIOSK_DATA"
+  grep -q "$DATA_LABEL" /etc/fstab || printf \
+    'LABEL=%s\t%s\text4\tdefaults,noatime,commit=1,errors=remount-ro\t0\t2\n' \
+    "$DATA_LABEL" "$KIOSK_DATA" >> /etc/fstab
+  mount "$KIOSK_DATA" || kiosk_die "could not mount $KIOSK_DATA"
+  install -d -m 755 "$KIOSK_DATA/kiosk/config" "$KIOSK_DATA/kiosk/share"
+  chown -R kiosk:kiosk "$KIOSK_DATA/kiosk"
+}
+
+enable_readonly_root() {
+  # raspi-config builds the overlay initramfs and points config.txt at it.
+  raspi-config nonint enable_overlayfs || kiosk_die "could not enable overlayfs"
+  # The boot partition holds kiosk.conf and must not be writable at runtime.
+  raspi-config nonint do_bootro 0 2>/dev/null || \
+    sed -i -E 's|(\s/boot/firmware\s+vfat\s+)defaults|\1ro,defaults|' /etc/fstab
+  kiosk_log "root filesystem will be read-only after reboot"
+}
+
+main() {
+  create_data_partition
+  mount_data_partition
+  enable_readonly_root
+  systemctl disable carbide-firstboot.service
+  kiosk_log "first boot complete, rebooting"
+  systemctl reboot
+}
+
+main "$@"

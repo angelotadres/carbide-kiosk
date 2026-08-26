@@ -1,0 +1,43 @@
+#!/bin/bash
+# The X client side of the kiosk session. Started by xinit, which is started by
+# carbide-kiosk.service. Exiting here ends the session and systemd restarts it.
+set -uo pipefail
+
+# Fail closed: a half-configured firewall or share is worse than none.
+CARBIDE_KIOSK_LIB="${CARBIDE_KIOSK_LIB:-/usr/local/lib/carbide-kiosk}"
+# shellcheck source=../lib/carbide-kiosk/common.sh
+. "$CARBIDE_KIOSK_LIB/common.sh" || {
+  printf 'carbide-kiosk: cannot load %s/common.sh\n' "$CARBIDE_KIOSK_LIB" >&2
+  exit 1
+}
+
+rotation="$(kiosk_get screen_rotation normal)"
+resolution="$(kiosk_get screen_resolution)"
+
+# A CNC controller must not blank or sleep while a job is running.
+xset s off
+xset s noblank
+xset -dpms
+
+output="$(xrandr --query | awk '/ connected/ {print $1; exit}')"
+if [ -n "$output" ]; then
+  case "$rotation" in
+    normal|left|right|inverted)
+      xrandr --output "$output" --rotate "$rotation" || kiosk_log "rotation failed"
+      ;;
+    *)
+      kiosk_log "screen_rotation '$rotation' is not one of normal/left/right/inverted"
+      ;;
+  esac
+  if [ -n "$resolution" ]; then
+    xrandr --output "$output" --mode "$resolution" \
+      || kiosk_log "resolution '$resolution' rejected, keeping autodetected mode"
+  fi
+fi
+
+unclutter -idle 3 -root &
+matchbox-window-manager -use_titlebar no -use_cursor yes &
+
+# The window manager is not worth restarting on its own; if Carbide Motion
+# goes, the whole session goes and systemd brings it back clean.
+exec /usr/local/bin/carbidemotion

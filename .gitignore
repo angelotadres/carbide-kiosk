@@ -1,0 +1,33 @@
+# Carbide Motion packages are downloaded, never redistributed
+deb/*.deb
+deb/*.sha256
+
+# pi-gen build tree and output
+pi-gen/
+work/
+deploy/
+
+# Local overrides
+config.local
+*.log
+
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# Files staged into the pi-gen stage by build.sh
+stage-kiosk/01-carbide-motion/files/carbidemotion.deb
+stage-kiosk/07-firstboot/files/kiosk.conf.example
