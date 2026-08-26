@@ -1,0 +1,40 @@
+#!/bin/bash
+# Show, hide or start the on-screen keyboard.
+#
+# Closing xvkbd's window only unmaps it; the process stays alive. Without
+# something to map it again the keyboard is gone until the session restarts,
+# which is exactly what happened the first time someone pressed its close
+# button. This is that something.
+set -uo pipefail
+
+CARBIDE_KIOSK_LIB="${CARBIDE_KIOSK_LIB:-/usr/local/lib/carbide-kiosk}"
+# shellcheck source=../lib/carbide-kiosk/common.sh
+. "$CARBIDE_KIOSK_LIB/common.sh" 2>/dev/null || true
+
+keyboard_window() { xdotool search --class XVkbd 2>/dev/null | tail -1; }
+
+raise_it() {
+  local wid="$1"
+  wmctrl -i -r "$wid" -b add,above 2>/dev/null
+  xdotool windowraise "$wid" 2>/dev/null
+}
+
+wid="$(keyboard_window)"
+
+if [ -z "$wid" ]; then
+  # Not running at all: start it where kiosk.conf asks.
+  xvkbd -geometry "$(kiosk_get keyboard_geometry '1100x360+420+760')" -no-keypad &
+  for _ in 1 2 3 4 5; do
+    sleep 1
+    wid="$(keyboard_window)"
+    [ -n "$wid" ] && { raise_it "$wid"; break; }
+  done
+  exit 0
+fi
+
+if xwininfo -id "$wid" 2>/dev/null | grep -q 'Map State: IsViewable'; then
+  xdotool windowunmap "$wid"
+else
+  xdotool windowmap "$wid"
+  raise_it "$wid"
+fi

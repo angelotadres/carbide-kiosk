@@ -65,6 +65,11 @@ if [ "$keyboard" = "1" ]; then
         break
       fi
     done ) &
+
+  # One button, bottom right, to bring the keyboard back after it is closed.
+  # Without it the close button on the keyboard's own title bar is a one-way
+  # door until the session restarts.
+  tint2 -c /etc/xdg/carbide/tint2rc &
 fi
 
 if [ "$saver_min" = "0" ]; then

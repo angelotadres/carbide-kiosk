@@ -6,6 +6,14 @@ install -m 755 files/usr/local/bin/carbide-kiosk-xsession \
 	"${ROOTFS_DIR}/usr/local/bin/carbide-kiosk-xsession"
 install -m 755 files/usr/local/bin/carbide-kiosk-write-xscreensaver \
 	"${ROOTFS_DIR}/usr/local/bin/carbide-kiosk-write-xscreensaver"
+install -m 755 files/usr/local/bin/carbide-kiosk-keyboard \
+	"${ROOTFS_DIR}/usr/local/bin/carbide-kiosk-keyboard"
+
+# The launcher button that shows and hides the keyboard.
+install -d -m 755 "${ROOTFS_DIR}/etc/xdg/carbide"
+install -m 644 files/launcher/carbide-keyboard.desktop \
+	"${ROOTFS_DIR}/etc/xdg/carbide/carbide-keyboard.desktop"
+install -m 644 files/launcher/tint2rc "${ROOTFS_DIR}/etc/xdg/carbide/tint2rc"
 
 # openbox rules: Carbide Motion maximised and undecorated, keyboard above it.
 install -d -m 755 "${ROOTFS_DIR}/etc/xdg/openbox"

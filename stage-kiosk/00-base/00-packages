@@ -8,12 +8,27 @@ x11-xserver-utils
 openbox
 unclutter
 
-# On-screen keyboard. xvkbd rather than onboard: onboard manages its own
+# On-screen keyboard. xvkbd
+
+# A single launcher button so the keyboard can be brought back after it is
+# dismissed. Not used as a taskbar; the machine runs one application.
+tint2
+adwaita-icon-theme rather than onboard: onboard manages its own
 # window and refuses window-manager decoration, so it could not be dragged,
 # and its auto-show needs the application to publish focused text fields over
-# accessibility, which Carbide Motion does not do. xvkbd is a plain X window
+# accessibility, which Carbide Motion does not do. xvkbd
+
+# A single launcher button so the keyboard can be brought back after it is
+# dismissed. Not used as a taskbar; the machine runs one application.
+tint2
+adwaita-icon-theme is a plain X window
 # the window manager can place, raise and decorate like any other.
 xvkbd
+
+# A single launcher button so the keyboard can be brought back after it is
+# dismissed. Not used as a taskbar; the machine runs one application.
+tint2
+adwaita-icon-theme
 
 # Screensaver. phosphor is a plain text renderer with no GL, which is both
 # cheaper than the graphical hacks and more useful: it shows the share address.
