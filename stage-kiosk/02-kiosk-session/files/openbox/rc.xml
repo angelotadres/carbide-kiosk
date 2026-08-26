@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+  <theme><keepBorder>no</keepBorder></theme>
+  <desktops><number>1</number></desktops>
+  <applications>
+    <!-- Carbide Motion fills the screen with no decoration. Maximised rather
+         than fullscreen deliberately: a fullscreen window outranks the
+         always-on-top layer, which would put it over the keyboard. Its
+         dialogs share this class and inherit the same treatment. -->
+    <application class="CarbideMotion6">
+      <decor>no</decor>
+      <maximized>yes</maximized>
+      <layer>normal</layer>
+      <focus>yes</focus>
+    </application>
+    <application name="onboard" class="Onboard">
+      <decor>no</decor>
+      <layer>above</layer>
+      <focus>no</focus>
+      <skip_taskbar>yes</skip_taskbar>
+    </application>
+  </applications>
+</openbox_config>

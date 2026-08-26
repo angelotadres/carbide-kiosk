@@ -1,0 +1,18 @@
+# System defaults for the on-screen keyboard. Set here rather than per-user
+# because the user's dconf database lives on the volatile overlay and would
+# be discarded at every reboot.
+[org/onboard]
+layout='Compact'
+start-minimized=false
+
+[org/onboard/window]
+docking-enabled=false
+force-to-top=true
+window-handles='M'
+enable-inactive-transparency=false
+
+[org/onboard/auto-show]
+enabled=true
+
+[org/onboard/icon-palette]
+in-use=true

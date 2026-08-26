@@ -3,8 +3,27 @@ xserver-xorg-legacy
 xserver-xorg-video-fbdev
 xinit
 x11-xserver-utils
-matchbox-window-manager
+# openbox rather than matchbox: matchbox has no window layers, so an
+# on-screen keyboard cannot float above a maximised application.
+openbox
 unclutter
+
+# On-screen keyboard for the touch panel, and the pieces it needs: a session
+# bus, accessibility so it can detect focused text fields, and gsettings to
+# store its configuration.
+onboard
+dbus-x11
+at-spi2-core
+libglib2.0-bin
+
+# Screensaver. phosphor is a plain text renderer with no GL, which is both
+# cheaper than the graphical hacks and more useful: it shows the share address.
+xscreensaver
+xscreensaver-data
+xscreensaver-data-extra
+
+# Needed to place and raise the keyboard window from the session script.
+wmctrl
 libgl1-mesa-dri
 libglu1-mesa
 fonts-dejavu-core

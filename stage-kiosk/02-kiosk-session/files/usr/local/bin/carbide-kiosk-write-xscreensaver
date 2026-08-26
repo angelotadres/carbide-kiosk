@@ -1,0 +1,45 @@
+#!/bin/bash
+# Render ~/.xscreensaver from kiosk.conf.
+#
+# The screensaver is plain text rather than graphics: standing in front of an
+# idle machine, the useful thing is where to send files and whether the
+# Shapeoko is plugged in. phosphor renders that with no GL at all.
+set -uo pipefail
+
+CARBIDE_KIOSK_LIB="${CARBIDE_KIOSK_LIB:-/usr/local/lib/carbide-kiosk}"
+# shellcheck source=../lib/carbide-kiosk/common.sh
+. "$CARBIDE_KIOSK_LIB/common.sh" || exit 1
+
+saver_min="$(kiosk_get screensaver_minutes 10)"
+blank_min="$(kiosk_get screen_blank_minutes 20)"
+scale="$(kiosk_get screensaver_text_size 5)"
+ticks="$(kiosk_get screensaver_fade 4)"
+colour="$(kiosk_get screensaver_colour "#FFB000")"
+
+# Numbers only; a typo here would otherwise become an unparseable config and
+# leave the machine with no screensaver at all.
+case "$saver_min" in ''|*[!0-9]*) saver_min=10 ;; esac
+case "$blank_min" in ''|*[!0-9]*) blank_min=20 ;; esac
+case "$scale"     in ''|*[!0-9]*) scale=5 ;; esac
+case "$ticks"     in ''|*[!0-9]*) ticks=4 ;; esac
+# A malformed colour would make phosphor refuse to start, leaving no saver.
+case "$colour" in \#[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]) ;; *) colour="#FFB000" ;; esac
+
+hms() { printf '%d:%02d:00' "$(($1 / 60))" "$(($1 % 60))"; }
+
+cat > "$HOME/.xscreensaver" <<CONF
+# Generated from $KIOSK_CONF at session start. Edits here do not survive.
+timeout:	$(hms "$saver_min")
+cycle:		0:00:00
+lock:		False
+dpmsEnabled:	True
+dpmsStandby:	$(hms "$blank_min")
+dpmsSuspend:	$(hms "$blank_min")
+dpmsOff:	$(hms "$blank_min")
+grabDesktopImages: False
+fade:		False
+unfade:		False
+mode:		one
+selected:	0
+programs:	phosphor -root -scale $scale -ticks $ticks -delay 45000 -esc -fg "$colour" -program "/usr/local/bin/carbide-kiosk-saver-text"
+CONF

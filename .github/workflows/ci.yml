@@ -107,6 +107,19 @@ jobs:
           test -f pi-gen/config
           test -f pi-gen/stage3/SKIP
           grep -q "STAGE_LIST='stage0 stage1 stage2 stage-kiosk'" pi-gen/config
+      - name: Confirm kiosk.conf documents exactly what the code reads
+        run: |
+          # Every setting the machine reads must be in the template an
+          # operator edits, and the template must not advertise settings
+          # nothing honours. Both directions silently mislead.
+          grep -rhoE 'kiosk_get [a-z_]+|kiosk_enabled [a-z_]+' stage-kiosk/ \
+            | awk '{print $2}' | sort -u > /tmp/used.txt
+          grep -oE '^[a-z_]+=' config/kiosk.conf.example | tr -d '=' | sort -u > /tmp/doc.txt
+          undocumented=$(comm -23 /tmp/used.txt /tmp/doc.txt)
+          unread=$(comm -13 /tmp/used.txt /tmp/doc.txt)
+          if [ -n "$undocumented" ]; then echo "read but undocumented:"; echo "$undocumented"; fi
+          if [ -n "$unread" ]; then echo "documented but never read:"; echo "$unread"; fi
+          [ -z "$undocumented" ] && [ -z "$unread" ]
       - name: Confirm the stage matches pi-gen's contract
         run: |
           # pi-gen only reads *-packages inside a sub-stage directory. A file

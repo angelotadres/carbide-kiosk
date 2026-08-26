@@ -10,6 +10,11 @@
 
 hostname=carbide-kiosk
 
+# The image is built on UTC. The clock is correct either way and syncs over
+# the network; this only decides what the screen shows. Use a zone name such
+# as America/Los_Angeles, America/New_York or Europe/Madrid.
+timezone=
+
 # --- Samba (required) ---------------------------------------------------
 #
 # The share does not come up without an account. There is no guest access.
@@ -73,3 +78,46 @@ usb_vendor_ids=
 
 screen_rotation=normal
 screen_resolution=
+
+# How much larger to draw Carbide Motion's interface. 1 is unscaled, 2 is
+# double size, which suits a high resolution panel at arm's length. Only the
+# application scales; the panel keeps its real resolution, so text stays sharp.
+ui_scale=2
+
+# --- On-screen keyboard -------------------------------------------------
+#
+# A floating keyboard for the touch panel. It appears when you tap a text
+# field, and there is a small icon at the bottom right to summon it by hand.
+# Drag it by its edge to move it out of the way.
+
+enable_keyboard=1
+
+# --- Screensaver --------------------------------------------------------
+#
+# Minutes of no input before the text screensaver appears, and before the
+# panel powers down entirely. Set screensaver_minutes to 0 to disable both
+# and keep the display on permanently.
+#
+# The screensaver shows the share address and whether the machine is
+# connected, so an idle panel is still telling you something useful.
+
+screensaver_minutes=10
+screen_blank_minutes=20
+
+# Heading shown on the screensaver. Empty means use the machine name.
+screensaver_message=
+
+# Text size. 5 is readable across a workshop; raise for a smaller panel.
+screensaver_text_size=5
+
+# How much the text glows as it lands, in the manner of an old monitor.
+# 1 is crisp with no glow at all; 4 is a brief flicker as each character
+# appears. This is separate from the scanline look, which is always on.
+screensaver_fade=4
+
+# Six-digit hex. Amber is the classic monitor phosphor and is easy on the
+# eyes in a dim workshop; #33FF33 gives the green equivalent.
+screensaver_colour=#FFB000
+
+# Seconds the text holds before redrawing with current values.
+screensaver_refresh_seconds=60

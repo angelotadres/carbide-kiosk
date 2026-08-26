@@ -1,0 +1,44 @@
+#!/bin/bash
+# Text the screensaver displays. Walking up to an idle machine, the useful
+# facts are where to send files and whether the Shapeoko is plugged in.
+#
+# Ends with a sleep on purpose. phosphor re-runs this program whenever it
+# exits, so returning immediately makes the text retype and scroll forever.
+# Holding, then exiting, gives one clean screen that refreshes with live data.
+set -uo pipefail
+
+CARBIDE_KIOSK_LIB="${CARBIDE_KIOSK_LIB:-/usr/local/lib/carbide-kiosk}"
+# shellcheck source=../../02-kiosk-session/files/usr/local/lib/carbide-kiosk/common.sh
+. "$CARBIDE_KIOSK_LIB/common.sh" 2>/dev/null || true
+
+host="$(hostname)"
+share="$(kiosk_get samba_share_name gcode 2>/dev/null || echo gcode)"
+message="$(kiosk_get screensaver_message 2>/dev/null || true)"
+refresh="$(kiosk_get screensaver_refresh_seconds 60 2>/dev/null || echo 60)"
+case "$refresh" in ''|*[!0-9]*) refresh=60 ;; esac
+ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+
+printf '\033[H\033[2J'
+printf '%s\n\n' "${message:-$host}"
+printf '  Drop G-code here\n'
+printf '    smb://%s.local/%s\n' "$host" "$share"
+[ -n "$ip" ] && printf '    smb://%s/%s\n' "$ip" "$share"
+printf '\n'
+
+# "Machine" rather than "Shapeoko": the heading above is often the hostname
+# shapeoko too, and the two lines read as duplicates.
+if [ -e /dev/shapeoko ]; then
+  printf '  Machine     connected\n'
+else
+  printf '  Machine     NOT CONNECTED\n'
+fi
+if systemctl is-active --quiet carbide-kiosk.service; then
+  printf '  Controller  ready\n'
+else
+  printf '  Controller  stopped\n'
+fi
+printf '  Free space  %s\n' "$(df -h /data 2>/dev/null | awk 'NR==2 {print $4}')"
+printf '\n  %s\n' "$(date '+%H:%M  %a %d %b')"
+printf '\n  touch the screen to wake\n'
+
+sleep "$refresh"

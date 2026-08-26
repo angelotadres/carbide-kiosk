@@ -4,6 +4,18 @@ install -m 644 files/usr/local/lib/carbide-kiosk/common.sh \
 	"${ROOTFS_DIR}/usr/local/lib/carbide-kiosk/common.sh"
 install -m 755 files/usr/local/bin/carbide-kiosk-xsession \
 	"${ROOTFS_DIR}/usr/local/bin/carbide-kiosk-xsession"
+install -m 755 files/usr/local/bin/carbide-kiosk-write-xscreensaver \
+	"${ROOTFS_DIR}/usr/local/bin/carbide-kiosk-write-xscreensaver"
+
+# openbox rules: Carbide Motion maximised and undecorated, keyboard above it.
+install -d -m 755 "${ROOTFS_DIR}/etc/xdg/openbox"
+install -m 644 files/openbox/rc.xml "${ROOTFS_DIR}/etc/xdg/openbox/rc.xml"
+
+# Keyboard defaults, system-wide so they survive the volatile overlay.
+install -d -m 755 "${ROOTFS_DIR}/etc/dconf/db/local.d" "${ROOTFS_DIR}/etc/dconf/profile"
+install -m 644 files/dconf/00-carbide-keyboard \
+	"${ROOTFS_DIR}/etc/dconf/db/local.d/00-carbide-keyboard"
+printf 'user-db:user\nsystem-db:local\n' > "${ROOTFS_DIR}/etc/dconf/profile/user"
 install -m 755 files/usr/local/sbin/carbide-kiosk-config \
 	"${ROOTFS_DIR}/usr/local/sbin/carbide-kiosk-config"
 install -m 644 files/carbide-kiosk-config.service \
@@ -28,6 +40,8 @@ if ! id -u kiosk >/dev/null 2>&1; then
 fi
 usermod -aG video,render,input,tty,dialout,plugdev kiosk
 
+dconf update || true
+
 # pi-gen had to be given a password to build a headless image. Replace it with
 # '*', which no password can ever match. The session is started by systemd and
 # the rescue console by agetty --autologin, neither of which authenticates, so
@@ -46,6 +60,13 @@ install -d -m 755 -o kiosk -g kiosk /home/kiosk/.local
 ln -sfn /data/kiosk/config /home/kiosk/.config
 ln -sfn /data/kiosk/share /home/kiosk/.local/share
 chown -h kiosk:kiosk /home/kiosk/.config /home/kiosk/.local/share
+
+# The keyboard and dconf write here; root-owned would silently break both.
+install -d -m 700 -o kiosk -g kiosk /home/kiosk/.cache
+
+# Somewhere obvious for the file dialog to land, pointing at the share.
+ln -sfn /data/gcode /home/kiosk/gcode
+chown -h kiosk:kiosk /home/kiosk/gcode
 
 systemctl enable carbide-kiosk-config.service
 systemctl enable carbide-kiosk.service

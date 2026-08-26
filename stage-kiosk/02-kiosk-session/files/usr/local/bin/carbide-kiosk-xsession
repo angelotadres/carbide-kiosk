@@ -13,11 +13,9 @@ CARBIDE_KIOSK_LIB="${CARBIDE_KIOSK_LIB:-/usr/local/lib/carbide-kiosk}"
 
 rotation="$(kiosk_get screen_rotation normal)"
 resolution="$(kiosk_get screen_resolution)"
-
-# A CNC controller must not blank or sleep while a job is running.
-xset s off
-xset s noblank
-xset -dpms
+scale="$(kiosk_get ui_scale 2)"
+keyboard="$(kiosk_get enable_keyboard 1)"
+saver_min="$(kiosk_get screensaver_minutes 10)"
 
 output="$(xrandr --query | awk '/ connected/ {print $1; exit}')"
 if [ -n "$output" ]; then
@@ -35,8 +33,31 @@ if [ -n "$output" ]; then
   fi
 fi
 
+# Scales Carbide Motion's interface without dropping the panel's resolution,
+# so text stays sharp. Accessibility is what lets the on-screen keyboard
+# notice a focused text field.
+export QT_SCALE_FACTOR="$scale"
+export QT_ACCESSIBILITY=1
+export QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
+
+# openbox understands window layers, which is what lets the keyboard float
+# above a maximised Carbide Motion. matchbox could not do this.
+openbox &
+sleep 1
+
+if [ "$keyboard" = "1" ]; then
+  onboard &
+fi
+
+if [ "$saver_min" = "0" ]; then
+  xset s off
+  xset -dpms
+else
+  carbide-kiosk-write-xscreensaver
+  xscreensaver -no-splash &
+fi
+
 unclutter -idle 3 -root &
-matchbox-window-manager -use_titlebar no -use_cursor yes &
 
 # The window manager is not worth restarting on its own; if Carbide Motion
 # goes, the whole session goes and systemd brings it back clean.

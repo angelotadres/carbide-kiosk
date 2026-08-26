@@ -40,6 +40,21 @@ configure_hostname() {
   rendering || hostnamectl set-hostname "$name"
 }
 
+# The image is built with UTC because a build server has no idea where the
+# machine will end up. The clock itself is correct and NTP-synced; only the
+# displayed time is wrong until this is set.
+configure_timezone() {
+  local tz
+  tz="$(kiosk_get timezone)"
+  [ -n "$tz" ] || return 0
+  if [ ! -f "/usr/share/zoneinfo/$tz" ]; then
+    kiosk_log "timezone '$tz' is not a known zone, leaving the clock on UTC"
+    return 0
+  fi
+  rendering && return 0
+  timedatectl set-timezone "$tz" || kiosk_log "could not set the timezone"
+}
+
 configure_wifi() {
   local ssid psk country conn
   ssid="$(kiosk_get wifi_ssid)"
@@ -87,6 +102,10 @@ configure_share_account() {
   printf '%s\n%s\n' "$password" "$password" | smbpasswd -s -a "$user" >/dev/null \
     || kiosk_die "could not set the Samba password for '$user'"
   smbpasswd -e "$user" >/dev/null
+
+  # Carbide Motion runs as kiosk. Without this it cannot open the share
+  # directory at all, and files copied over the network are invisible to it.
+  usermod -aG cncshare kiosk 2>/dev/null || kiosk_log "could not add kiosk to cncshare"
 }
 
 configure_samba() {
@@ -314,6 +333,7 @@ main() {
     install -d -m 755 "$OUT/etc/udev/rules.d"
   fi
   configure_hostname
+  configure_timezone
   configure_wifi
   configure_share_account
   configure_samba

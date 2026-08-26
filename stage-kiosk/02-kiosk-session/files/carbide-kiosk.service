@@ -25,6 +25,9 @@ StandardInput=tty
 StandardOutput=journal
 StandardError=journal
 Environment=XDG_RUNTIME_DIR=/run/user/1000
+# So Carbide Motion's file dialog opens on the share rather than the home
+# directory, which holds nothing a person put there.
+WorkingDirectory=/data/gcode
 ExecStart=/usr/bin/xinit /usr/local/bin/carbide-kiosk-xsession -- :0 vt1 -keeptty -nolisten tcp
 Restart=always
 RestartSec=5
