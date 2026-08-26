@@ -33,13 +33,18 @@ redact() {
 yes_no() { if "$@" >/dev/null 2>&1; then printf 'yes\n'; else printf 'no\n'; fi; }
 
 cnc_state() {
-  local dev
+  local dev candidate
   if [ -e /dev/shapeoko ]; then
     dev="$(readlink -f /dev/shapeoko)"
     printf 'connected (%s)\n' "$dev"
     return
   fi
-  dev="$(ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null | head -n 1)"
+  dev=""
+  for candidate in /dev/ttyACM* /dev/ttyUSB*; do
+    [ -e "$candidate" ] || continue
+    dev="$candidate"
+    break
+  done
   if [ -n "$dev" ]; then
     printf 'a serial device is present at %s but it is not recognised as a Shapeoko\n' "$dev"
     printf '            add its vendor id to usb_vendor_ids in kiosk.conf\n'
@@ -59,10 +64,10 @@ power_state() {
     printf 'healthy\n'
     return
   fi
-  (( (raw & 0x1) )) && bits="$bits under-voltage RIGHT NOW;"
-  (( (raw & 0x4) )) && bits="$bits throttled RIGHT NOW;"
-  (( (raw & 0x10000) )) && bits="$bits under-voltage has happened since boot;"
-  (( (raw & 0x40000) )) && bits="$bits throttling has happened since boot;"
+  (( raw & 0x1 )) && bits="$bits under-voltage RIGHT NOW;"
+  (( raw & 0x4 )) && bits="$bits throttled RIGHT NOW;"
+  (( raw & 0x10000 )) && bits="$bits under-voltage has happened since boot;"
+  (( raw & 0x40000 )) && bits="$bits throttling has happened since boot;"
   printf 'PROBLEM (%s)%s\n' "$raw" "$bits"
   printf '            an under-powered supply is the usual cause of mid-job crashes\n'
 }

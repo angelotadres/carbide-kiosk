@@ -15,7 +15,7 @@ failed=0
 scripts() {
   find . -path ./pi-gen -prune -o -type f \
     \( -name '*.sh' -o -name '00-run.sh' -o -name 'carbide-*' \) -print \
-    | grep -vE '\.service$|\.conf$'
+    | grep -vE '\.service$|\.timer$|\.conf$'
 }
 
 run_in_docker() {

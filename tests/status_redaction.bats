@@ -1,7 +1,11 @@
 #!/usr/bin/env bats
-# The status file is written into a network share that everyone on the shop
-# LAN with the share password can read. Nothing secret may reach it, including
-# secrets that leak in via a log line the status writer merely quotes.
+# The status file is written into a network share that anyone with the share
+# password can read. Nothing secret may reach it, including a secret that
+# leaks in via a log line the status writer merely quotes.
+#
+# redact is a shell function, so it must be called in this shell. Invoking it
+# through `bash -c` would silently find no such command, leave the output
+# empty, and pass every "must not contain the secret" assertion vacuously.
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
@@ -17,35 +21,58 @@ samba_share_name=gcode
 CONF
 }
 
+# Every case asserts the text survived, so an empty result can never be
+# mistaken for a successful redaction.
+scrub() {
+  local out
+  out="$(printf '%s\n' "$1" | redact)"
+  [ -n "$out" ]
+  printf '%s' "$out"
+}
+
 @test "the samba password never reaches the status file" {
-  run bash -c 'printf "smbd: auth failed for SuperSecret123\n" | redact'
-  [[ "$output" != *"SuperSecret123"* ]]
-  [[ "$output" == *"[redacted]"* ]]
+  local out
+  out="$(scrub 'smbd: auth failed for SuperSecret123')"
+  [[ "$out" != *"SuperSecret123"* ]]
+  [[ "$out" == *"[redacted]"* ]]
+  [[ "$out" == *"auth failed for"* ]]
 }
 
 @test "the wifi password never reaches the status file" {
-  run bash -c 'printf "wpa: psk=WifiSecret456 rejected\n" | redact'
-  [[ "$output" != *"WifiSecret456"* ]]
+  local out
+  out="$(scrub 'wpa: psk=WifiSecret456 rejected')"
+  [[ "$out" != *"WifiSecret456"* ]]
+  [[ "$out" == *"rejected"* ]]
 }
 
 @test "both secrets are stripped from the same text" {
-  run bash -c 'printf "a SuperSecret123 b WifiSecret456 c\n" | redact'
-  [[ "$output" != *"Secret"* ]]
+  local out
+  out="$(scrub 'a SuperSecret123 b WifiSecret456 c')"
+  [[ "$out" != *"Secret"* ]]
+  [[ "$out" == *"a "* ]]
+  [[ "$out" == *" c"* ]]
 }
 
 @test "a secret appearing more than once is stripped every time" {
-  run bash -c 'printf "SuperSecret123 and again SuperSecret123\n" | redact'
-  [[ "$output" != *"SuperSecret123"* ]]
+  local out
+  out="$(scrub 'SuperSecret123 and again SuperSecret123')"
+  [[ "$out" != *"SuperSecret123"* ]]
+  [[ "$out" == *"and again"* ]]
 }
 
 @test "ordinary diagnostic text is left intact" {
-  run bash -c 'printf "Shapeoko connected on /dev/ttyACM0\n" | redact'
-  [[ "$output" == *"/dev/ttyACM0"* ]]
+  local out
+  out="$(scrub 'Shapeoko connected on /dev/ttyACM0')"
+  [ "$out" = "Shapeoko connected on /dev/ttyACM0" ]
 }
 
 @test "an empty password does not blank the whole file" {
   printf 'samba_password=\nwifi_password=\n' > "$KIOSK_CONF"
-  run bash -c 'printf "Shapeoko connected\n" | redact'
-  [[ "$output" == *"Shapeoko connected"* ]]
-  [[ "$output" != *"[redacted]"* ]]
+  local out
+  out="$(scrub 'Shapeoko connected')"
+  [ "$out" = "Shapeoko connected" ]
+}
+
+@test "redact is actually defined, not silently absent" {
+  declare -F redact
 }
