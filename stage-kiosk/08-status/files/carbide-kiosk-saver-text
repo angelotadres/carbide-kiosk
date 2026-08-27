@@ -40,7 +40,9 @@ network() {
 
 frame() {
   local host share message ip
-  host="$(hostname)"
+  # Short form only: a hostname that already carries a domain would produce
+  # smb://name.local.local, which resolves for nobody.
+  host="$(hostname -s 2>/dev/null || hostname)"
   share="$(kiosk_get samba_share_name gcode 2>/dev/null || echo gcode)"
   message="$(kiosk_get screensaver_message 2>/dev/null || true)"
   ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
