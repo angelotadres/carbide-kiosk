@@ -96,7 +96,7 @@ main() {
     printf '  Carbide Motion: %s\n' "$(yes_no systemctl is-active --quiet carbide-kiosk.service)"
     printf '  Times it has restarted since boot: %s\n' "${restarts:-unknown}"
     printf '  File sharing:   %s\n' "$(yes_no systemctl is-active --quiet smbd.service)"
-    printf '  Shapeoko:       %s\n' "$(cnc_state)"
+    printf '  Cutter:         %s\n' "$(cnc_state)"
     printf '  Power supply:   %s\n' "$(power_state)"
     printf '\n'
 

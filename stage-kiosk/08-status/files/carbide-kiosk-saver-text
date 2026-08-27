@@ -47,16 +47,11 @@ frame() {
   message="$(kiosk_get screensaver_message 2>/dev/null || true)"
   ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
 
-  # The machine's own name always appears. A workshop with several of these
-  # needs to know which one it is standing at, and screensaver_message names
-  # the room rather than the machine.
-  if [ -n "$message" ]; then
-    printf '%s\n' "$message"
-    printf '%s\n\n' "$host"
-  else
-    printf '%s\n\n' "$host"
-  fi
-  printf '  Drop G-code here\n'
+  # The room name, if there is one. The machine's own name goes into the
+  # instruction below rather than sitting on a line of its own, where it read
+  # as a stray word with nothing to say what it meant.
+  [ -n "$message" ] && printf '%s\n\n' "$message"
+  printf '  Send G-code to %s\n' "$host"
   printf '    smb://%s.local/%s\n' "$host" "$share"
   [ -n "$ip" ] && printf '    smb://%s/%s\n' "$ip" "$share"
   printf '\n'
@@ -64,9 +59,9 @@ frame() {
   # alone meant a working machine on an unlisted board was reported as
   # unplugged, which is the worst thing a diagnostic can do.
   if [ -e /dev/shapeoko ] || compgen -G '/dev/ttyACM*' >/dev/null || compgen -G '/dev/ttyUSB*' >/dev/null; then
-    printf '  Machine     connected\n'
+    printf '  Cutter      connected\n'
   else
-    printf '  Machine     NOT CONNECTED\n'
+    printf '  Cutter      NOT CONNECTED\n'
   fi
   if systemctl is-active --quiet carbide-kiosk.service; then
     printf '  Controller  ready\n'
