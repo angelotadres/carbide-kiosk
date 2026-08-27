@@ -1,7 +1,7 @@
 [Unit]
 Description=Carbide Motion Kiosk first-boot setup
 Documentation=https://github.com/angelotadres/carbide-kiosk
-After=local-fs.target
+After=local-fs.target carbide-kiosk-access.service
 Before=carbide-kiosk-config.service carbide-kiosk.service
 ConditionPathExists=!/data/kiosk
 

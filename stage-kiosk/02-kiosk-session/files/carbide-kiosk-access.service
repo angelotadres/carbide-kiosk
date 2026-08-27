@@ -1,0 +1,25 @@
+[Unit]
+Description=Carbide Motion Kiosk network and remote access
+Documentation=https://github.com/angelotadres/carbide-kiosk
+# Deliberately the first thing this image does after the network stack is
+# available, and before first-boot setup. Everything else on this machine can
+# fail; if this has run, the machine can still be reached and diagnosed.
+After=network.target NetworkManager.service
+Wants=network.target
+Before=carbide-firstboot.service carbide-kiosk-config.service
+RequiresMountsFor=/boot/firmware
+ConditionPathExists=/boot/firmware/kiosk.conf
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/carbide-kiosk-config --access-only
+# Bounded, and failure is not fatal. This unit exists to help when things go
+# wrong; it must never itself become the thing that goes wrong.
+TimeoutStartSec=90
+SuccessExitStatus=0 1
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

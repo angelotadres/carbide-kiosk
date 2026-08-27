@@ -21,6 +21,8 @@ install -m 644 files/openbox/rc.xml "${ROOTFS_DIR}/etc/xdg/openbox/rc.xml"
 
 install -m 755 files/usr/local/sbin/carbide-kiosk-config \
 	"${ROOTFS_DIR}/usr/local/sbin/carbide-kiosk-config"
+install -m 644 files/carbide-kiosk-access.service \
+	"${ROOTFS_DIR}/etc/systemd/system/carbide-kiosk-access.service"
 install -m 644 files/carbide-kiosk-config.service \
 	"${ROOTFS_DIR}/etc/systemd/system/carbide-kiosk-config.service"
 install -m 644 files/carbide-kiosk.service \
@@ -69,6 +71,7 @@ install -d -m 700 -o kiosk -g kiosk /home/kiosk/.cache
 ln -sfn /data/gcode /home/kiosk/gcode
 chown -h kiosk:kiosk /home/kiosk/gcode
 
+systemctl enable carbide-kiosk-access.service
 systemctl enable carbide-kiosk-config.service
 systemctl enable carbide-kiosk.service
 systemctl set-default multi-user.target

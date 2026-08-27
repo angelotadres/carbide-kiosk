@@ -27,6 +27,12 @@ OUT="${CARBIDE_KIOSK_ROOT:-}"
 
 rendering() { [ "$RENDER_ONLY" = "1" ]; }
 
+# --access-only brings up just the network and the way in. It exists so that
+# a failure anywhere else - including in first-boot setup, which runs before
+# this - still leaves a machine that can be logged into and diagnosed.
+ACCESS_ONLY=0
+[ "${1:-}" = "--access-only" ] && ACCESS_ONLY=1
+
 # Anything that talks to another daemon can wait forever when that daemon is
 # not ready. During boot that stalls the whole machine, so nothing here is
 # allowed to run unbounded.
@@ -307,6 +313,31 @@ configure_ssh() {
   systemctl enable --now ssh 2>/dev/null || kiosk_log "could not start sshd"
 }
 
+# Just enough firewall to be reachable. The full ruleset is applied later by
+# the main run; until then this is loopback, established traffic and, if a
+# credential exists, ssh.
+access_firewall() {
+  local ruleset
+  ruleset="$(outfile /etc/nftables.conf)"
+  {
+    printf '#!/usr/sbin/nft -f\n'
+    printf '# Access phase only. Replaced by the full ruleset moments later.\n'
+    printf 'flush ruleset\ntable inet filter {\n  chain input {\n'
+    printf '    type filter hook input priority filter; policy drop;\n'
+    printf '    iif lo accept\n    ct state established,related accept\n'
+    printf '    udp sport 67 udp dport 68 accept\n'
+    if kiosk_enabled enable_ssh \
+       && { [ -n "$(kiosk_get ssh_authorized_key)" ] || [ -n "$(kiosk_get ssh_password)" ]; }; then
+      printf '    tcp dport 22 ct state new limit rate 6/minute burst 3 packets accept\n'
+    fi
+    printf '  }\n  chain forward { type filter hook forward priority filter; policy drop; }\n'
+    printf '  chain output { type filter hook output priority filter; policy accept; }\n}\n'
+  } > "$ruleset"
+  nft -c -f "$ruleset" || kiosk_die "generated access ruleset is not valid"
+  rendering && return 0
+  nft -f "$ruleset" || kiosk_log "could not load the access ruleset"
+}
+
 configure_cnc_udev() {
   local rule extra id
   rule="$(outfile /etc/udev/rules.d/60-carbide-cnc.rules)"
@@ -342,6 +373,16 @@ configure_cnc_udev() {
 
 main() {
   [ -r "$KIOSK_CONF" ] || kiosk_die "$KIOSK_CONF is missing; nothing can be configured"
+
+  if [ "$ACCESS_ONLY" = "1" ]; then
+    kiosk_step 'joining the network'
+    configure_wifi
+    kiosk_step 'enabling remote access'
+    configure_ssh
+    access_firewall
+    kiosk_log "access is up; the rest of the configuration follows"
+    return 0
+  fi
   if rendering; then
     [ -n "$OUT" ] || kiosk_die "render-only mode needs CARBIDE_KIOSK_ROOT"
     install -d -m 755 "$OUT/etc/udev/rules.d"
