@@ -1,12 +1,11 @@
 # Fallback CNC controller rule, shipped in the image.
 #
-# carbide-kiosk-config overwrites this on every boot with the vendor list from
-# kiosk.conf. It exists so that a missing or malformed kiosk.conf still leaves
-# the Shapeoko reachable rather than the machine unusable.
-SUBSYSTEM=="tty", ATTRS{idVendor}=="16d0", SYMLINK+="shapeoko", GROUP="dialout", MODE="0660", TAG+="uaccess"
-SUBSYSTEM=="tty", ATTRS{idVendor}=="03eb", SYMLINK+="shapeoko", GROUP="dialout", MODE="0660", TAG+="uaccess"
-SUBSYSTEM=="tty", ATTRS{idVendor}=="2341", SYMLINK+="shapeoko", GROUP="dialout", MODE="0660", TAG+="uaccess"
-SUBSYSTEM=="tty", ATTRS{idVendor}=="2a03", SYMLINK+="shapeoko", GROUP="dialout", MODE="0660", TAG+="uaccess"
-SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", SYMLINK+="shapeoko", GROUP="dialout", MODE="0660", TAG+="uaccess"
-SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", SYMLINK+="shapeoko", GROUP="dialout", MODE="0660", TAG+="uaccess"
-SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", SYMLINK+="shapeoko", GROUP="dialout", MODE="0660", TAG+="uaccess"
+# carbide-kiosk-config overwrites this on every boot. It exists so that a
+# missing or malformed kiosk.conf still leaves the machine reachable.
+#
+# Any USB serial device is treated as the controller. A dedicated CNC kiosk
+# has exactly one, and no published list of Carbide board USB identifiers
+# exists, so an allowlist can only ever be incomplete - and being absent from
+# it made the status display claim the machine was unplugged while it was
+# working perfectly well.
+SUBSYSTEM=="tty", SUBSYSTEMS=="usb", SYMLINK+="shapeoko", GROUP="dialout", MODE="0660", TAG+="uaccess"

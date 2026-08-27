@@ -46,8 +46,7 @@ cnc_state() {
     break
   done
   if [ -n "$dev" ]; then
-    printf 'a serial device is present at %s but it is not recognised as a Shapeoko\n' "$dev"
-    printf '            add its vendor id to usb_vendor_ids in kiosk.conf\n'
+    printf 'connected (%s)\n' "$dev"
   else
     printf 'not detected - check the USB cable and that the machine is powered on\n'
   fi

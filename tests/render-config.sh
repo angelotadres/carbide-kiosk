@@ -82,7 +82,8 @@ check "mdns stays closed"        absent   "$NFT" "udp dport 5353"
 check "ping stays closed"        absent   "$NFT" "echo-request"
 
 check "hostname is applied"      contains "$WORK/closed/etc/hostname" "shopfloor"
-check "seeded vendor present"    contains "$UDEV" 'ATTRS{idVendor}=="03eb"'
+check "any usb serial is the cnc" contains "$UDEV" 'SUBSYSTEMS=="usb"'
+check "no vendor allowlist by default" absent "$UDEV" "idVendor"
 check "symlink is stable"        contains "$UDEV" 'SYMLINK+="shapeoko"'
 
 # --- Every exception turned on ------------------------------------------
@@ -107,9 +108,12 @@ check "open ruleset is valid"    nft -c -f "$NFT"
 check "enable_ssh without a credential stays shut" absent "$NFT" "dport 22"
 check "mdns opens on request"    contains "$NFT" "udp dport 5353 accept"
 check "ping opens on request"    contains "$NFT" "echo-request accept"
-check "extra vendor accepted"    contains "$UDEV" 'ATTRS{idVendor}=="1234"'
-check "second extra accepted"    contains "$UDEV" 'ATTRS{idVendor}=="5678"'
+# Setting usb_vendor_ids narrows detection instead of widening it, for a
+# machine where something else also presents as a serial port.
+check "listed vendor accepted"   contains "$UDEV" 'ATTRS{idVendor}=="1234"'
+check "second listed accepted"   contains "$UDEV" 'ATTRS{idVendor}=="5678"'
 check "malformed vendor dropped" absent   "$UDEV" "nothex"
+check "narrowing drops catch-all" absent  "$UDEV" 'SUBSYSTEMS=="usb"'
 
 # --- Configurations that must be refused --------------------------------
 

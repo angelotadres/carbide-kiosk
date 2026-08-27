@@ -299,32 +299,35 @@ configure_ssh() {
 configure_cnc_udev() {
   local rule extra id
   rule="$(outfile /etc/udev/rules.d/60-carbide-cnc.rules)"
-  # Seeded with the vendors Carbide 3D and Shapeoko-family boards are known to
-  # present. kiosk.conf extends this without rebuilding the image.
-  # 16d0 (MCS) is what a Shapeoko 5 Pro actually presents; the rest cover
-  # older Carbide and Arduino-derived boards.
-  local vendors="16d0 03eb 2341 2a03 1a86 0403 10c4"
 
   extra="$(kiosk_get usb_vendor_ids)"
-  for id in $extra; do
-    if kiosk_valid_usb_id "$id"; then
-      vendors="$vendors $id"
-    else
-      kiosk_log "ignoring malformed usb_vendor_ids entry '$id'"
-    fi
-  done
 
   {
     printf '# Generated from %s on every boot.\n' "$KIOSK_CONF"
-    for id in $vendors; do
-      printf 'SUBSYSTEM=="tty", ATTRS{idVendor}=="%s", SYMLINK+="shapeoko", GROUP="dialout", MODE="0660", TAG+="uaccess"\n' "$id"
-    done
+    if [ -z "$extra" ]; then
+      # Any USB serial device. A dedicated CNC kiosk has exactly one, no
+      # published list of Carbide board identifiers exists, and being absent
+      # from an allowlist made the status display report a working machine
+      # as unplugged.
+      printf 'SUBSYSTEM=="tty", SUBSYSTEMS=="usb", SYMLINK+="shapeoko", GROUP="dialout", MODE="0660", TAG+="uaccess"\n'
+    else
+      # usb_vendor_ids narrows it, for a machine with a second serial device
+      # attached that must not be mistaken for the controller.
+      for id in $extra; do
+        if kiosk_valid_usb_id "$id"; then
+          printf 'SUBSYSTEM=="tty", ATTRS{idVendor}=="%s", SYMLINK+="shapeoko", GROUP="dialout", MODE="0660", TAG+="uaccess"\n' "$id"
+        else
+          kiosk_log "ignoring malformed usb_vendor_ids entry '$id'"
+        fi
+      done
+    fi
   } > "$rule"
 
   rendering && return 0
   udevadm control --reload-rules || kiosk_log "udev rule reload failed"
   udevadm trigger --subsystem-match=tty --action=add || true
 }
+
 
 main() {
   [ -r "$KIOSK_CONF" ] || kiosk_die "$KIOSK_CONF is missing; nothing can be configured"

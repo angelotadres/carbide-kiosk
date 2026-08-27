@@ -65,8 +65,12 @@ enable_ping=0
 
 # --- CNC controller -----------------------------------------------------
 #
-# USB vendor IDs treated as a CNC controller, in addition to the built-in
-# list. Space-separated four-digit hex, as printed by lsusb.
+# Left empty, any USB serial device is treated as the controller, which is
+# right for a machine with one thing plugged into it and needs no setup.
+#
+# Fill this in only if something else on this machine also appears as a serial
+# port and must not be mistaken for the CNC. Space-separated four-digit hex
+# vendor IDs as printed by lsusb; setting it replaces the default entirely.
 
 usb_vendor_ids=
 
