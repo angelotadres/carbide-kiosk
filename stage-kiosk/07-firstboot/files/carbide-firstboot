@@ -33,6 +33,31 @@ say() {
 }
 step() { say ""; say "  [$1/4] $2"; }
 
+# Run a command and capture everything it says into the boot log. When one of
+# these tools half-succeeds, its own output is the only thing that explains
+# why, and it otherwise goes to a journal nobody can reach.
+logged() {
+  local out rc
+  out="$("$@" 2>&1)"; rc=$?
+  if [ -n "$out" ]; then
+    printf '  | %s\n' "$out" >> "$BOOTLOG" 2>/dev/null || true
+  fi
+  printf '  (exit %s) %s\n' "$rc" "$*" >> "$BOOTLOG" 2>/dev/null || true
+  return $rc
+}
+
+# A snapshot of the things that turn out to matter when this goes wrong.
+snapshot() {
+  {
+    printf '\n--- %s ---\n' "$1"
+    df -h / /boot/firmware /data 2>/dev/null
+    printf 'partitions:\n'; lsblk -o NAME,SIZE,FSTYPE,LABEL 2>/dev/null | sed 's/^/  /'
+    printf 'cmdline: %s\n' "$(cat /boot/firmware/cmdline.txt 2>/dev/null)"
+    printf 'config initramfs: %s\n' "$(grep -c '^initramfs ' /boot/firmware/config.txt 2>/dev/null)"
+    printf 'kernel: %s\n' "$(uname -r)"
+  } >> "$BOOTLOG" 2>/dev/null || true
+}
+
 # Override the shared kiosk_die so a failure lands on the screen in front of
 # the operator, not only in a journal they have no way to read yet.
 kiosk_die() {
@@ -94,7 +119,8 @@ create_data_partition() {
   # stranding everything in between.
   say "        creating storage from ${start_mb} MiB onwards"
   step 2 "Preparing storage for your files"
-  parted -s -a optimal "$dev" mkpart primary ext4 "${start_mb}MiB" 100% \
+  snapshot "before partitioning"
+  logged parted -s -a optimal "$dev" mkpart primary ext4 "${start_mb}MiB" 100% \
     || kiosk_die "could not create the data partition on $dev"
   partprobe "$dev" || true
   udevadm settle
@@ -124,7 +150,7 @@ mount_data_partition() {
   grep -q "$DATA_LABEL" /etc/fstab || printf \
     'LABEL=%s\t%s\text4\tdefaults,noatime,commit=1,errors=remount-ro\t0\t2\n' \
     "$DATA_LABEL" "$KIOSK_DATA" >> /etc/fstab
-  mount "$KIOSK_DATA" || kiosk_die "could not mount $KIOSK_DATA"
+  logged mount "$KIOSK_DATA" || kiosk_die "could not mount $KIOSK_DATA"
 
   install -d -m 2755 -o root -g systemd-journal "$KIOSK_DATA/log/journal"
   grep -q '/var/log/journal' /etc/fstab || printf \
@@ -143,12 +169,14 @@ enable_readonly_root() {
 
   # Order matters: enable_bootro refuses to edit fstab once the overlay is
   # live, so the boot partition is marked read-only first.
-  raspi-config nonint enable_bootro \
+  snapshot "before making the system read-only"
+  logged raspi-config nonint enable_bootro \
     || kiosk_die "could not mark the boot partition read-only"
 
   # raspi-config builds the overlay initramfs, points config.txt at it, and
   # adds overlayroot=tmpfs to the kernel command line.
-  raspi-config nonint enable_overlayfs || kiosk_die "could not enable overlayfs"
+  logged raspi-config nonint enable_overlayfs || kiosk_die "could not enable overlayfs"
+  snapshot "after enabling overlayfs"
 
   # Checking cmdline alone is not enough, and getting that wrong produced a
   # machine that would not boot at all. raspi-config builds an initramfs,
@@ -194,7 +222,8 @@ main() {
   create_data_partition
   mount_data_partition
   enable_readonly_root
-  systemctl disable carbide-firstboot.service
+  snapshot "final state before reboot"
+  logged systemctl disable carbide-firstboot.service
   step 4 "Restarting"
   say ""
   say "    Setup finished. Restarting now."

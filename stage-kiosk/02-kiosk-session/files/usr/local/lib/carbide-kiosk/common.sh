@@ -12,6 +12,9 @@ kiosk_log() { printf 'carbide-kiosk: %s\n' "$*" >&2; }
 kiosk_step() {
   printf 'carbide-kiosk: %s\n' "$*" >&2
   printf '  ... %s\n' "$*" > /dev/tty1 2>/dev/null || true
+  # Also onto the boot partition, the one filesystem readable from another
+  # computer when there is no keyboard and no network to ask with.
+  printf '%s %s\n' "$(date '+%H:%M:%S')" "$*" >> /boot/firmware/first-boot.log 2>/dev/null || true
 }
 kiosk_die() { kiosk_log "$*"; exit 1; }
 
