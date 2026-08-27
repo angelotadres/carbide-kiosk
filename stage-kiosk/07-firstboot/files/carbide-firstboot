@@ -15,6 +15,28 @@ CARBIDE_KIOSK_LIB="${CARBIDE_KIOSK_LIB:-/usr/local/lib/carbide-kiosk}"
 }
 
 DATA_LABEL="CARBIDEDATA"
+
+# First boot takes minutes and the screen is otherwise blank, which invites
+# someone to switch the machine off in the middle of formatting. Everything
+# below is written to the console the operator is actually looking at.
+CONSOLE=/dev/tty1
+[ -w "$CONSOLE" ] || CONSOLE=/dev/console
+say() { printf '%s\n' "$*" > "$CONSOLE" 2>/dev/null || printf '%s\n' "$*"; }
+step() { say ""; say "  [$1/4] $2"; }
+
+# Override the shared kiosk_die so a failure lands on the screen in front of
+# the operator, not only in a journal they have no way to read yet.
+kiosk_die() {
+  kiosk_log "$*"
+  say ""
+  say "  SETUP FAILED"
+  say "    $*"
+  say ""
+  say "  The machine is safe to switch off. Nothing was lost."
+  say "  Report this message to whoever set the machine up."
+  say ""
+  exit 1
+}
 DATA_MIN_MB="${DATA_PARTITION_MIN_MB:-2048}"
 
 boot_device() {
@@ -43,7 +65,9 @@ partition_device() {
 create_data_partition() {
   local dev start_mb part number size_mb
 
+  step 1 "Checking the card"
   if blkid -L "$DATA_LABEL" >/dev/null 2>&1; then
+    say "        already set up"
     kiosk_log "data partition already exists"
     return 0
   fi
@@ -59,6 +83,8 @@ create_data_partition() {
   # Explicit start to 100%. An earlier version used "100% 100%", which parted
   # accepts and turns into a 1 MiB partition at the very end of the card,
   # stranding everything in between.
+  say "        creating storage from ${start_mb} MiB onwards"
+  step 2 "Preparing storage for your files"
   parted -s -a optimal "$dev" mkpart primary ext4 "${start_mb}MiB" 100% \
     || kiosk_die "could not create the data partition on $dev"
   partprobe "$dev" || true
@@ -76,8 +102,10 @@ create_data_partition() {
 
   # -m 0: no reserved blocks. This holds G-code, not system files, and 5% of
   # a large card is gigabytes given away for nothing.
-  mkfs.ext4 -F -q -L "$DATA_LABEL" -m 0 "$part" \
+  say "        formatting ${size_mb} MiB - this is the slow part"
+  mkfs.ext4 -F -L "$DATA_LABEL" -m 0 "$part" > "$CONSOLE" 2>&1 \
     || kiosk_die "could not format $part"
+  say "        done"
 
   kiosk_log "created data partition $part (${size_mb} MiB, starting at ${start_mb} MiB)"
 }
@@ -101,6 +129,8 @@ mount_data_partition() {
 
 enable_readonly_root() {
   local cmdline=/boot/firmware/cmdline.txt
+  step 3 "Making the system read-only"
+  say "        building the boot image, please wait"
 
   # Order matters: enable_bootro refuses to edit fstab once the overlay is
   # live, so the boot partition is marked read-only first.
@@ -117,14 +147,31 @@ enable_readonly_root() {
   grep -q 'overlayroot=tmpfs' "$cmdline" \
     || kiosk_die "overlayfs did not take effect; refusing to continue with a writable root"
 
+  say "        done"
   kiosk_log "root filesystem will be read-only after reboot"
 }
 
 main() {
+  say ""
+  say "  ================================================"
+  say "    Carbide Motion Kiosk - first time setup"
+  say "  ================================================"
+  say ""
+  say "    This runs once and takes a few minutes."
+  say "    The machine will restart itself when done."
+  say ""
+  say "    DO NOT SWITCH OFF."
+  say ""
+
   create_data_partition
   mount_data_partition
   enable_readonly_root
   systemctl disable carbide-firstboot.service
+  step 4 "Restarting"
+  say ""
+  say "    Setup finished. Restarting now."
+  say ""
+  sleep 3
   kiosk_log "first boot complete, rebooting"
   systemctl reboot
 }

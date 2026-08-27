@@ -9,8 +9,8 @@ ConditionPathExists=!/data/kiosk
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/sbin/carbide-firstboot
-StandardOutput=journal
-StandardError=journal
+StandardOutput=journal+console
+StandardError=journal+console
 
 [Install]
 WantedBy=multi-user.target

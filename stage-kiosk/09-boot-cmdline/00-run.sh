@@ -11,6 +11,11 @@ test -f "${CMDLINE}"
 
 sed -i -E 's| init=/usr/lib/raspberrypi-sys-mods/firstboot||g' "${CMDLINE}"
 
+# Drop 'quiet'. First boot takes minutes with nothing else on screen, and a
+# frozen-looking display invites someone to power cycle the machine in the
+# middle of formatting the card. Boot messages are ugly but they move.
+sed -i -E 's| quiet||g' "${CMDLINE}"
+
 # cmdline.txt is read as a single line; a stray newline silently truncates the
 # kernel arguments after it.
 tr -d '\n' < "${CMDLINE}" > "${CMDLINE}.tmp"
