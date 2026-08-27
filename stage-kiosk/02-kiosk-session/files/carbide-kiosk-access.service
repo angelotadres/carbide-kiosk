@@ -4,8 +4,11 @@ Documentation=https://github.com/angelotadres/carbide-kiosk
 # Deliberately the first thing this image does after the network stack is
 # available, and before first-boot setup. Everything else on this machine can
 # fail; if this has run, the machine can still be reached and diagnosed.
-After=network.target NetworkManager.service
-Wants=network.target
+# NetworkManager only, deliberately not network.target. This unit brings the
+# network up rather than waiting for it, and waiting would close a cycle:
+# network.target comes after network-pre.target, which comes after
+# nftables.service, which the configuration step is ordered before.
+After=NetworkManager.service
 Before=carbide-firstboot.service carbide-kiosk-config.service
 RequiresMountsFor=/boot/firmware
 ConditionPathExists=/boot/firmware/kiosk.conf
