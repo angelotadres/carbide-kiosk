@@ -47,7 +47,15 @@ frame() {
   message="$(kiosk_get screensaver_message 2>/dev/null || true)"
   ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
 
-  printf '%s\n\n' "${message:-$host}"
+  # The machine's own name always appears. A workshop with several of these
+  # needs to know which one it is standing at, and screensaver_message names
+  # the room rather than the machine.
+  if [ -n "$message" ]; then
+    printf '%s\n' "$message"
+    printf '%s\n\n' "$host"
+  else
+    printf '%s\n\n' "$host"
+  fi
   printf '  Drop G-code here\n'
   printf '    smb://%s.local/%s\n' "$host" "$share"
   [ -n "$ip" ] && printf '    smb://%s/%s\n' "$ip" "$share"

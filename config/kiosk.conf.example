@@ -131,7 +131,10 @@ keyboard_accent_colour=#4aa3df
 screensaver_minutes=10
 screen_blank_minutes=20
 
-# Heading shown on the screensaver. Empty means use the machine name.
+# A line above the machine name on the screensaver, for the name of the room
+# or the workshop. The machine's own name is always shown underneath, so a
+# space with several of these still tells you which one you are standing at.
+# Leave empty to show just the machine name.
 screensaver_message=
 
 # Text size. 5 is readable across a workshop; raise for a smaller panel.

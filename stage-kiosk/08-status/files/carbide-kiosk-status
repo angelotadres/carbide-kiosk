@@ -86,6 +86,8 @@ main() {
     printf 'Written automatically. Editing this file achieves nothing.\n\n'
 
     printf 'Updated:         %s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')"
+    [ -n "$(kiosk_get screensaver_message)" ] \
+      && printf 'Location:        %s\n' "$(kiosk_get screensaver_message)"
     printf 'Machine name:    %s\n' "$(hostname -s 2>/dev/null || hostname)"
     printf 'Running since:   %s\n' "$(uptime -p 2>/dev/null | sed 's/^up //')"
     printf '\n'
