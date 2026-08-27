@@ -48,7 +48,7 @@ openbox &
 sleep 3
 
 if [ "$keyboard" = "1" ]; then
-  kb_geom="$(kiosk_get keyboard_geometry '1780x480+70+700')"
+  kb_geom="$(kiosk_get keyboard_geometry '1780x468+70+700')"
   mapfile -t kb_args < <(kiosk_keyboard_args)
   # No -no-functionkeys: xvkbd rejects that option and exits immediately,
   # which looked exactly like the keyboard failing to appear.

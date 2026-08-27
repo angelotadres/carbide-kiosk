@@ -24,7 +24,7 @@ wid="$(keyboard_window)"
 if [ -z "$wid" ]; then
   # Not running at all: start it where kiosk.conf asks.
   mapfile -t kb_args < <(kiosk_keyboard_args)
-  xvkbd -geometry "$(kiosk_get keyboard_geometry '1780x480+70+700')" -no-keypad "${kb_args[@]}" &
+  xvkbd -geometry "$(kiosk_get keyboard_geometry '1780x468+70+700')" -no-keypad "${kb_args[@]}" &
   for _ in 1 2 3 4 5; do
     sleep 1
     wid="$(keyboard_window)"

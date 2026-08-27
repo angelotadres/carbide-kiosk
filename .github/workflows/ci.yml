@@ -25,7 +25,7 @@ jobs:
           mapfile -t scripts < <(
             find . -path ./pi-gen -prune -o -type f \
               \( -name '*.sh' -o -name '00-run.sh' -o -name 'carbide-*' \) -print \
-              | grep -vE '\.service$|\.timer$|\.conf$'
+              | grep -vE '\.service$|\.timer$|\.conf$|\.desktop$'
           )
           printf '%s\n' "${scripts[@]}"
           shellcheck -x -e SC1091,SC2154 "${scripts[@]}"
@@ -74,14 +74,21 @@ jobs:
             bash -c '
               set -e
               apt-get update
-              grep -vE "^\s*(#|$)" stage-kiosk/00-packages | xargs \
-                apt-get install --simulate --no-install-recommends
+              # POSIX classes and two passes rather than one clever regex:
+              # the previous pattern let comment words through as package
+              # names, and pointed at a path that no longer existed, so this
+              # check was passing while testing nothing at all.
+              packages=$(grep -v "^[[:space:]]*#" stage-kiosk/00-base/00-packages \
+                          | grep -v "^[[:space:]]*$")
+              test -n "$packages"
+              # shellcheck disable=SC2086
+              apt-get install --simulate --no-install-recommends $packages
               apt-get install --simulate ./deb/carbidemotion-*.deb
               # The package under-declares its dependencies: the binary links
               # against libQt5PrintSupport, which Depends does not mention.
               # Install for real and ask the linker, rather than trusting it.
-              apt-get install -y --no-install-recommends \
-                $(grep -vE "^\s*(#|$)" stage-kiosk/00-base/00-packages)
+              # shellcheck disable=SC2086
+              apt-get install -y --no-install-recommends $packages
               apt-get install -y ./deb/carbidemotion-*.deb
               missing=$(ldd /usr/local/bin/carbidemotion | grep "not found" || true)
               if [ -n "$missing" ]; then
@@ -107,6 +114,18 @@ jobs:
           test -f pi-gen/config
           test -f pi-gen/stage3/SKIP
           grep -q "STAGE_LIST='stage0 stage1 stage2 stage-kiosk'" pi-gen/config
+      - name: Confirm the package list contains only package names
+        run: |
+          # A text edit once split comment lines and left prose in the middle
+          # of the list. The dependency job then tried to install words like
+          # "rather" and "than", which is a confusing way to find out.
+          bad=$(grep -v '^[[:space:]]*#' stage-kiosk/00-base/00-packages \
+                | grep -v '^[[:space:]]*$' \
+                | grep -vE '^[a-z0-9][a-z0-9.+-]*$' || true)
+          if [ -n "$bad" ]; then
+            echo "not package names:"; echo "$bad"; exit 1
+          fi
+          echo "package list is clean"
       - name: Confirm kiosk.conf documents exactly what the code reads
         run: |
           # Every setting the machine reads must be in the template an

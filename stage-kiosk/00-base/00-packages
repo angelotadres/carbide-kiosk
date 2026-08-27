@@ -3,26 +3,17 @@ xserver-xorg-legacy
 xserver-xorg-video-fbdev
 xinit
 x11-xserver-utils
+
 # openbox rather than matchbox: matchbox has no window layers, so an
 # on-screen keyboard cannot float above a maximised application.
 openbox
 unclutter
 
-# On-screen keyboard. xvkbd
-
-# A single launcher button so the keyboard can be brought back after it is
-# dismissed. Not used as a taskbar; the machine runs one application.
-tint2
-adwaita-icon-theme rather than onboard: onboard manages its own
+# On-screen keyboard. xvkbd rather than onboard: onboard manages its own
 # window and refuses window-manager decoration, so it could not be dragged,
-# and its auto-show needs the application to publish focused text fields over
-# accessibility, which Carbide Motion does not do. xvkbd
-
-# A single launcher button so the keyboard can be brought back after it is
-# dismissed. Not used as a taskbar; the machine runs one application.
-tint2
-adwaita-icon-theme is a plain X window
-# the window manager can place, raise and decorate like any other.
+# and its auto-show needs the application to publish focused text fields
+# over accessibility, which Carbide Motion does not do. This one is a plain
+# X window the window manager can place, raise and decorate like any other.
 xvkbd
 
 # A single launcher button so the keyboard can be brought back after it is
@@ -40,9 +31,11 @@ xscreensaver-data-extra
 # script. The window is skip-taskbar, so it has to be located by class.
 wmctrl
 xdotool
+
 libgl1-mesa-dri
 libglu1-mesa
 fonts-dejavu-core
+
 libqt5core5a
 libqt5gui5
 libqt5widgets5
@@ -53,6 +46,7 @@ libqt5websockets5
 # Not declared by the carbidemotion package, but the binary links against it.
 # Without this the app dies at startup with a missing libQt5PrintSupport.so.5.
 libqt5printsupport5
+
 samba
 samba-common-bin
 nftables

@@ -16,7 +16,9 @@ pause="$(kiosk_get screensaver_refresh_seconds 20 2>/dev/null || echo 20)"
 case "$scale" in ''|*[!0-9]*) scale=7 ;; esac
 case "$pause" in ''|*[!0-9]*) pause=20 ;; esac
 
-height="$(xdpyinfo 2>/dev/null | awk '/dimensions:/ {split($2,d,"x"); print d[2]; exit}')"
+# Tolerates xdpyinfo being absent: on a machine with no X server its 127
+# would otherwise become this script's status and break sourcing it.
+height="$(xdpyinfo 2>/dev/null | awk '/dimensions:/ {split($2,d,"x"); print d[2]; exit}' || true)"
 [ -n "$height" ] || height=1200
 rows=$(( height / (10 * scale) ))
 [ "$rows" -lt 8 ] && rows=8
