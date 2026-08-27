@@ -61,14 +61,17 @@ kiosk_keyboard_args() {
 
   keys="$(kiosk_get keyboard_key_colour '#46525a')"
   text="$(kiosk_get keyboard_text_colour '#ffffff')"
-  gap="$(kiosk_get keyboard_gap_colour '#3a444b')"
+  # Lighter than the keys, not darker: a darker gap reads as a black band
+  # across the keyboard, and rows of touching dark lines make the straight
+  # edges appear to curve.
+  gap="$(kiosk_get keyboard_gap_colour '#566370')"
   accent="$(kiosk_get keyboard_accent_colour '#4aa3df')"
 
   printf '%s\n' \
     "-xrm" "XVkbd*letterFont: -*-helvetica-bold-r-normal--${size}-*-*-*-*-*-iso8859-1" \
     "-xrm" "XVkbd*specialFont: -*-helvetica-bold-r-normal--${special}-*-*-*-*-*-iso8859-1" \
     "-xrm" "XVkbd*generalFont: -*-helvetica-bold-r-normal--${special}-*-*-*-*-*-iso8859-1" \
-    "-xrm" "XVkbd*Form.defaultDistance: 5" \
+    "-xrm" "XVkbd*Form.defaultDistance: 4" \
     "-xrm" "XVkbd*Key.borderWidth: 0" \
     "-xrm" "XVkbd*Key.shadowWidth: 0" \
     "-xrm" "XVkbd*Background: $keys" \

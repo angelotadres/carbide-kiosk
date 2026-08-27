@@ -92,7 +92,9 @@ ui_scale=2
 enable_keyboard=1
 
 # Size and position, in the usual X form WIDTHxHEIGHT+X+Y.
-keyboard_geometry=1500x520+200+640
+# Wide enough that the rightmost keys are not clipped at a 36 pixel label
+# size. A narrower window squeezes Return, Shift and Backspace off the edge.
+keyboard_geometry=1780x520+70+660
 
 # Key label size in pixels. The keyboard is not a Qt application, so ui_scale
 # does not reach it and its type has to be sized separately. Modifier keys
@@ -103,7 +105,7 @@ keyboard_font_size=36
 # set it to the same value as the key colour for no visible separation.
 keyboard_key_colour=#46525a
 keyboard_text_colour=#ffffff
-keyboard_gap_colour=#3a444b
+keyboard_gap_colour=#566370
 keyboard_accent_colour=#4aa3df
 
 # --- Screensaver --------------------------------------------------------
