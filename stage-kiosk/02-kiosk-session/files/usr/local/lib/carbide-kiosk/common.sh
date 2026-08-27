@@ -43,3 +43,39 @@ kiosk_valid_hostname() {
 kiosk_valid_usb_id() {
   printf '%s' "$1" | grep -qE '^[0-9a-fA-F]{4}$'
 }
+
+# The on-screen keyboard's appearance, assembled from kiosk.conf. Shared
+# because both the session and the show/hide button need to launch it
+# identically; a keyboard that changes colour when it is restarted looks
+# broken.
+#
+# xvkbd draws with Athena widgets, which ignore QT_SCALE_FACTOR, so its type
+# has to be sized here. letterFont and specialFont override the generic Font
+# resource, which is why setting Font alone does nothing.
+kiosk_keyboard_args() {
+  local size special keys text gap accent
+  size="$(kiosk_get keyboard_font_size 36)"
+  case "$size" in ''|*[!0-9]*) size=36 ;; esac
+  special=$(( size * 5 / 9 ))
+  [ "$special" -lt 12 ] && special=12
+
+  keys="$(kiosk_get keyboard_key_colour '#46525a')"
+  text="$(kiosk_get keyboard_text_colour '#ffffff')"
+  gap="$(kiosk_get keyboard_gap_colour '#3a444b')"
+  accent="$(kiosk_get keyboard_accent_colour '#4aa3df')"
+
+  printf '%s\n' \
+    "-xrm" "XVkbd*letterFont: -*-helvetica-bold-r-normal--${size}-*-*-*-*-*-iso8859-1" \
+    "-xrm" "XVkbd*specialFont: -*-helvetica-bold-r-normal--${special}-*-*-*-*-*-iso8859-1" \
+    "-xrm" "XVkbd*generalFont: -*-helvetica-bold-r-normal--${special}-*-*-*-*-*-iso8859-1" \
+    "-xrm" "XVkbd*Form.defaultDistance: 5" \
+    "-xrm" "XVkbd*Key.borderWidth: 0" \
+    "-xrm" "XVkbd*Key.shadowWidth: 0" \
+    "-xrm" "XVkbd*Background: $keys" \
+    "-xrm" "XVkbd*specialBackground: $keys" \
+    "-xrm" "XVkbd*Foreground: $text" \
+    "-xrm" "XVkbd*form.background: $gap" \
+    "-xrm" "XVkbd*highlightBackground: $accent" \
+    "-xrm" "XVkbd*highlightForeground: #10161a" \
+    "-xrm" "XVkbd*focusBackground: $accent"
+}

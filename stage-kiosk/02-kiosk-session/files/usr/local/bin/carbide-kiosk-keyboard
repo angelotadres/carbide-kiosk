@@ -23,11 +23,8 @@ wid="$(keyboard_window)"
 
 if [ -z "$wid" ]; then
   # Not running at all: start it where kiosk.conf asks.
-  kb_font="$(kiosk_get keyboard_font_size 24)"
-  case "$kb_font" in ''|*[!0-9]*) kb_font=24 ;; esac
-  kb_xlfd="-*-helvetica-bold-r-normal--${kb_font}-*-*-*-*-*-iso8859-1"
-  xvkbd -geometry "$(kiosk_get keyboard_geometry '1500x520+200+640')" -no-keypad \
-    -xrm "xvkbd*Font: $kb_xlfd" -xrm "xvkbd*keyFont: $kb_xlfd" &
+  mapfile -t kb_args < <(kiosk_keyboard_args)
+  xvkbd -geometry "$(kiosk_get keyboard_geometry '1500x520+200+640')" -no-keypad "${kb_args[@]}" &
   for _ in 1 2 3 4 5; do
     sleep 1
     wid="$(keyboard_window)"

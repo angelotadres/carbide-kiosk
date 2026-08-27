@@ -95,8 +95,16 @@ enable_keyboard=1
 keyboard_geometry=1500x520+200+640
 
 # Key label size in pixels. The keyboard is not a Qt application, so ui_scale
-# does not reach it and its type has to be sized separately.
-keyboard_font_size=24
+# does not reach it and its type has to be sized separately. Modifier keys
+# such as Shift and Control are drawn proportionally smaller.
+keyboard_font_size=36
+
+# Colours, as six-digit hex. The gap colour is what shows between the keys;
+# set it to the same value as the key colour for no visible separation.
+keyboard_key_colour=#46525a
+keyboard_text_colour=#ffffff
+keyboard_gap_colour=#3a444b
+keyboard_accent_colour=#4aa3df
 
 # --- Screensaver --------------------------------------------------------
 #
