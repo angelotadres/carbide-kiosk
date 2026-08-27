@@ -94,7 +94,12 @@ enable_keyboard=1
 # Size and position, in the usual X form WIDTHxHEIGHT+X+Y.
 # Wide enough that the rightmost keys are not clipped at a 36 pixel label
 # size. A narrower window squeezes Return, Shift and Backspace off the edge.
-keyboard_geometry=1780x520+70+660
+keyboard_geometry=1780x480+70+700
+
+# The function key row is off: it carries a wide Backspace key that pushes the
+# layout past the edge of the screen at a readable label size. Turning it on
+# means dropping keyboard_font_size to about 24 to avoid clipping.
+keyboard_function_keys=0
 
 # Key label size in pixels. The keyboard is not a Qt application, so ui_scale
 # does not reach it and its type has to be sized separately. Modifier keys

@@ -54,6 +54,12 @@ kiosk_valid_usb_id() {
 # resource, which is why setting Font alone does nothing.
 kiosk_keyboard_args() {
   local size special keys text gap accent
+
+  # -compact drops the function key row. That row carries a double-width
+  # "Backspace Delete" key which forces the whole layout wider than a 1920
+  # pixel panel at a readable label size, clipping Return, Shift and Focus off
+  # the right edge. A CNC controller has no use for F1 to F12.
+  kiosk_enabled keyboard_function_keys 0 || printf '%s\n' "-compact"
   size="$(kiosk_get keyboard_font_size 36)"
   case "$size" in ''|*[!0-9]*) size=36 ;; esac
   special=$(( size * 5 / 9 ))
