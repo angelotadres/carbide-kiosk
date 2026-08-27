@@ -13,6 +13,10 @@ ConditionPathExists=/boot/firmware/kiosk.conf
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/sbin/carbide-kiosk-config
+# No single step of applying a config file is worth hanging a boot over. If
+# this cannot finish in two minutes something is wrong with it, and the
+# machine is more useful running with partial settings than not running.
+TimeoutStartSec=120
 StandardOutput=journal
 StandardError=journal
 

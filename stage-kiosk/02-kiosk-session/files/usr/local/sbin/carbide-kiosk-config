@@ -26,6 +26,17 @@ RENDER_ONLY="${CARBIDE_KIOSK_RENDER_ONLY:-0}"
 OUT="${CARBIDE_KIOSK_ROOT:-}"
 
 rendering() { [ "$RENDER_ONLY" = "1" ]; }
+
+# Anything that talks to another daemon can wait forever when that daemon is
+# not ready. During boot that stalls the whole machine, so nothing here is
+# allowed to run unbounded.
+bounded() {
+  local secs="$1"; shift
+  timeout --foreground "$secs" "$@" || {
+    kiosk_log "timed out or failed after ${secs}s: $*"
+    return 1
+  }
+}
 outfile() { printf '%s%s\n' "$OUT" "$1"; }
 
 configure_hostname() {
@@ -37,7 +48,7 @@ configure_hostname() {
   fi
   printf '%s\n' "$name" > "$(outfile /etc/hostname)"
   printf '127.0.1.1\t%s\n' "$name" >> "$(outfile /etc/hosts)"
-  rendering || hostnamectl set-hostname "$name"
+  rendering || bounded 20 hostnamectl set-hostname "$name"
 }
 
 # The image is built with UTC because a build server has no idea where the
@@ -52,7 +63,7 @@ configure_timezone() {
     return 0
   fi
   rendering && return 0
-  timedatectl set-timezone "$tz" || kiosk_log "could not set the timezone"
+  bounded 20 timedatectl set-timezone "$tz" || kiosk_log "could not set the timezone"
 }
 
 configure_wifi() {
@@ -62,7 +73,7 @@ configure_wifi() {
   psk="$(kiosk_get wifi_password)"
   country="$(kiosk_get wifi_country US)"
 
-  rendering || raspi-config nonint do_wifi_country "$country" \
+  rendering || bounded 30 raspi-config nonint do_wifi_country "$country" \
     || kiosk_log "could not set wifi country"
 
   conn="$(outfile /etc/NetworkManager/system-connections/carbide-kiosk.nmconnection)"
@@ -76,7 +87,7 @@ configure_wifi() {
     printf '[ipv4]\nmethod=auto\n\n[ipv6]\nmethod=auto\n'
   } > "$conn"
   chmod 600 "$conn"
-  rendering || nmcli connection reload || kiosk_log "NetworkManager reload failed"
+  rendering || bounded 20 nmcli connection reload || kiosk_log "NetworkManager reload failed"
 }
 
 configure_share_account() {

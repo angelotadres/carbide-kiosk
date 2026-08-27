@@ -2,7 +2,10 @@
 Description=Carbide Motion kiosk session
 Documentation=https://github.com/angelotadres/carbide-kiosk
 After=carbide-kiosk-config.service systemd-user-sessions.service
-Requires=carbide-kiosk-config.service
+# Wants, not Requires: a machine that shows Carbide Motion with the wrong
+# hostname is far more use than a black screen. Configuration failing must
+# not take the application down with it.
+Wants=carbide-kiosk-config.service
 RequiresMountsFor=/data
 Conflicts=getty@tty1.service
 After=getty@tty1.service
