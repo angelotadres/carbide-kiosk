@@ -21,7 +21,16 @@ DATA_LABEL="CARBIDEDATA"
 # below is written to the console the operator is actually looking at.
 CONSOLE=/dev/tty1
 [ -w "$CONSOLE" ] || CONSOLE=/dev/console
-say() { printf '%s\n' "$*" > "$CONSOLE" 2>/dev/null || printf '%s\n' "$*"; }
+
+# Also written to the boot partition. It is FAT, so it is the one filesystem
+# the operator can read on their own computer - which matters because when
+# this step fails there is often no keyboard, no network and no other way to
+# find out what happened.
+BOOTLOG=/boot/firmware/first-boot.log
+say() {
+  printf '%s\n' "$*" > "$CONSOLE" 2>/dev/null || printf '%s\n' "$*"
+  printf '%s %s\n' "$(date '+%H:%M:%S')" "$*" >> "$BOOTLOG" 2>/dev/null || true
+}
 step() { say ""; say "  [$1/4] $2"; }
 
 # Override the shared kiosk_die so a failure lands on the screen in front of
@@ -141,11 +150,30 @@ enable_readonly_root() {
   # adds overlayroot=tmpfs to the kernel command line.
   raspi-config nonint enable_overlayfs || kiosk_die "could not enable overlayfs"
 
-  # The read-only root is the whole point of this image. A silently writable
-  # root that looks protected is the one outcome worth refusing to boot into.
-  [ -r "$cmdline" ] || kiosk_die "$cmdline is missing; cannot confirm the overlay"
-  grep -q 'overlayroot=tmpfs' "$cmdline" \
-    || kiosk_die "overlayfs did not take effect; refusing to continue with a writable root"
+  # Checking cmdline alone is not enough, and getting that wrong produced a
+  # machine that would not boot at all. raspi-config builds an initramfs,
+  # renames it, points config.txt at it, and only then edits cmdline. A
+  # partial run leaves the kernel told to mount an overlay root by machinery
+  # that was never installed, which hangs before anything can report it.
+  local config=/boot/firmware/config.txt initrd ok=yes
+
+  grep -q 'overlayroot=tmpfs' "$cmdline" 2>/dev/null || ok=no
+  initrd="$(awk '/^initramfs /{print $2; exit}' "$config" 2>/dev/null)"
+  [ -n "$initrd" ] || ok=no
+  [ -n "$initrd" ] && [ -f "/boot/firmware/$initrd" ] || ok=no
+
+  if [ "$ok" != "yes" ]; then
+    # Leave the machine bootable. A writable root is a compromise; a machine
+    # that cannot start is not.
+    sed -i -E 's| ?overlayroot=tmpfs||g' "$cmdline" 2>/dev/null
+    say ""
+    say "  WARNING: could not make the system read-only."
+    say "    The machine will still work, but an unclean shutdown"
+    say "    could corrupt it. Report this."
+    say ""
+    kiosk_log "overlay setup incomplete (initramfs '${initrd:-none}'); reverted to a writable root"
+    return 0
+  fi
 
   say "        done"
   kiosk_log "root filesystem will be read-only after reboot"

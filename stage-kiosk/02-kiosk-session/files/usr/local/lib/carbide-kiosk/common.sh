@@ -6,6 +6,13 @@ KIOSK_CONF="${KIOSK_CONF:-/boot/firmware/kiosk.conf}"
 KIOSK_DATA="${KIOSK_DATA:-/data}"
 
 kiosk_log() { printf 'carbide-kiosk: %s\n' "$*" >&2; }
+
+# Progress markers, so a stall names the step it stalled in rather than
+# leaving a blank screen.
+kiosk_step() {
+  printf 'carbide-kiosk: %s\n' "$*" >&2
+  printf '  ... %s\n' "$*" > /dev/tty1 2>/dev/null || true
+}
 kiosk_die() { kiosk_log "$*"; exit 1; }
 
 # Read one key from kiosk.conf, falling back to a default.

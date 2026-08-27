@@ -346,13 +346,25 @@ main() {
     [ -n "$OUT" ] || kiosk_die "render-only mode needs CARBIDE_KIOSK_ROOT"
     install -d -m 755 "$OUT/etc/udev/rules.d"
   fi
+  # Order matters. The network and the way in come first, so that if a later
+  # step stalls there is still a machine to log into and find out why. This
+  # step hanging with no console, no network and no readable log is exactly
+  # how an evening gets lost.
+  kiosk_step 'setting the machine name'
   configure_hostname
-  configure_timezone
+  kiosk_step 'joining the network'
   configure_wifi
-  configure_share_account
-  configure_samba
+  kiosk_step 'enabling remote access'
   configure_ssh
+  kiosk_step 'applying the firewall'
   configure_firewall
+  kiosk_step 'setting the clock'
+  configure_timezone
+  kiosk_step 'creating the share account'
+  configure_share_account
+  kiosk_step 'configuring file sharing'
+  configure_samba
+  kiosk_step 'looking for the cutter'
   configure_cnc_udev
   kiosk_log "runtime configuration applied"
 }
