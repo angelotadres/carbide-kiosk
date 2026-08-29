@@ -162,6 +162,33 @@ mount_data_partition() {
   install -d -m 700 "$KIOSK_DATA/ssh"
 }
 
+# Which initramfs the firmware will actually load, printed if one will be.
+#
+# Two mechanisms exist and this base image uses the second. An explicit
+# "initramfs <file> followkernel" line in config.txt names one outright. With
+# auto_initramfs=1 the firmware instead picks the file matching the kernel it
+# is booting and raspi-config leaves config.txt alone - so looking only for
+# the explicit line reported a correctly installed overlay as incomplete and
+# reverted a working machine to a writable root.
+overlay_initramfs() {
+  local bootdir="${1:-/boot/firmware}" release="${2:-$(uname -r)}"
+  local config="$bootdir/config.txt" name
+
+  name="$(awk '/^[[:space:]]*initramfs[[:space:]]/{print $2; exit}' "$config" 2>/dev/null)"
+  if [ -z "$name" ] && grep -qE '^[[:space:]]*auto_initramfs=1' "$config" 2>/dev/null; then
+    # The firmware's own suffixes. v7l is checked before v7 because it would
+    # otherwise match the shorter pattern and name the wrong file.
+    case "$release" in
+      *-v7l*) name=initramfs7l ;;
+      *-v8*)  name=initramfs8 ;;
+      *-v7*)  name=initramfs7 ;;
+      *)      name=initramfs ;;
+    esac
+  fi
+
+  [ -n "$name" ] && [ -f "$bootdir/$name" ] && printf '%s\n' "$name"
+}
+
 enable_readonly_root() {
   local cmdline=/boot/firmware/cmdline.txt
   step 3 "Making the system read-only"
@@ -173,22 +200,22 @@ enable_readonly_root() {
   logged raspi-config nonint enable_bootro \
     || kiosk_die "could not mark the boot partition read-only"
 
-  # raspi-config builds the overlay initramfs, points config.txt at it, and
-  # adds overlayroot=tmpfs to the kernel command line.
+  # raspi-config builds the overlay initramfs and adds overlayroot=tmpfs to
+  # the kernel command line. Whether it also names the initramfs in config.txt
+  # depends on the base image; this one relies on auto_initramfs=1 instead.
   logged raspi-config nonint enable_overlayfs || kiosk_die "could not enable overlayfs"
   snapshot "after enabling overlayfs"
 
   # Checking cmdline alone is not enough, and getting that wrong produced a
-  # machine that would not boot at all. raspi-config builds an initramfs,
-  # renames it, points config.txt at it, and only then edits cmdline. A
-  # partial run leaves the kernel told to mount an overlay root by machinery
-  # that was never installed, which hangs before anything can report it.
-  local config=/boot/firmware/config.txt initrd ok=yes
+  # machine that would not boot at all: the kernel told to mount an overlay
+  # root by machinery that was never installed hangs before anything can
+  # report it. Both halves have to be there - the parameter and an initramfs
+  # the firmware will really load.
+  local initrd ok=yes
 
   grep -q 'overlayroot=tmpfs' "$cmdline" 2>/dev/null || ok=no
-  initrd="$(awk '/^initramfs /{print $2; exit}' "$config" 2>/dev/null)"
+  initrd="$(overlay_initramfs)"
   [ -n "$initrd" ] || ok=no
-  [ -n "$initrd" ] && [ -f "/boot/firmware/$initrd" ] || ok=no
 
   if [ "$ok" != "yes" ]; then
     # Leave the machine bootable. A writable root is a compromise; a machine
