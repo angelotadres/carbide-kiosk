@@ -1,0 +1,255 @@
+#!/bin/bash
+# Open the way in, before anything else on this machine runs.
+#
+# Standalone by design. Every other script here can fail, be missing, or fail
+# to parse, and this one still opens port 22 and says what it did. That is the
+# whole point: it is the instrument the rest of the image is diagnosed with,
+# so it must not share fate with anything it diagnoses.
+#
+# Three rules follow from that, and each one replaces a way this image has
+# already locked itself out:
+#
+#   1. It always runs. No ConditionPathExists, no early exit on a missing
+#      config file. A boot partition with no kiosk.conf - which is what every
+#      fresh flash has until someone copies one - used to skip this unit
+#      silently, and systemd reports a skipped condition as success.
+#   2. It never dies quietly. Every outcome, including refusing to open the
+#      port, is written to tty1 and to first-boot.log on the boot partition.
+#      The journal does not count: it is unreadable on a machine with no way
+#      in, which is the only situation these messages are for.
+#   3. Credentials may come from kiosk.conf or from a plain authorized_keys
+#      file on the boot partition. Two ways in, either of which is a
+#      deliberate act by whoever flashed the card. Nothing is ever baked into
+#      the image, so no published image carries a credential.
+set -uo pipefail
+
+# Overridable only so the test suite can point them at a temporary tree. The
+# defaults are what runs on the machine.
+BOOT="${CARBIDE_BOOT_DIR:-/boot/firmware}"
+CONF="$BOOT/kiosk.conf"
+BOOT_KEYS="$BOOT/authorized_keys"
+ETC="${CARBIDE_ETC_DIR:-/etc}"
+DROPIN="$ETC/ssh/sshd_config.d/carbide-kiosk.conf"
+RULESET="$ETC/nftables.conf"
+
+# Where the host key lives. /etc is on a tmpfs overlay once the overlay is
+# engaged, and /data does not exist yet on first boot, so this is the one
+# path that is real at both moments. carbide-kiosk-config moves it onto /data
+# later, once that partition is actually mounted.
+HOSTKEY="$ETC/ssh/ssh_host_ed25519_key"
+
+# Said out loud, in all three places, because any one of them can be the only
+# one a person can reach.
+say() {
+  printf 'carbide-kiosk-access: %s\n' "$*" >&2
+  { printf '  ... %s\n' "$*" > /dev/tty1; } 2>/dev/null || true
+  { printf '%s %s\n' "$(date '+%H:%M:%S')" "$*" >> "$BOOT/first-boot.log"; } 2>/dev/null || true
+}
+
+alert() {
+  printf 'carbide-kiosk-access: %s\n' "$*" >&2
+  { printf '  !!! %s\n' "$*" > /dev/tty1; } 2>/dev/null || true
+  { printf '%s !!! %s\n' "$(date '+%H:%M:%S')" "$*" >> "$BOOT/first-boot.log"; } 2>/dev/null || true
+}
+
+# Deliberately not sourced from common.sh. Reading one key out of a config
+# file is four lines, and depending on the shared library would reintroduce
+# exactly the shared fate this script exists to avoid: a syntax error in a
+# helper this script never calls would otherwise stop it loading at all.
+#
+# Values run to the end of the line so a '#' in a password needs no escaping,
+# matching kiosk_get in common.sh. tests/access.bats holds both to the same
+# cases so the two cannot drift apart unnoticed.
+conf_get() {
+  local key="$1" val=""
+  [ -r "$CONF" ] || { printf '%s\n' "${2-}"; return 0; }
+  val="$(sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*(.*)\$/\\1/p" "$CONF" | tail -n 1)"
+  val="${val%"${val##*[![:space:]]}"}"
+  case "$val" in
+    \"*\") val="${val#\"}"; val="${val%\"}" ;;
+    \'*\') val="${val#\'}"; val="${val%\'}" ;;
+  esac
+  if [ -n "$val" ]; then printf '%s\n' "$val"; else printf '%s\n' "${2-}"; fi
+}
+
+# The port opens when a credential exists and nothing explicitly forbids it.
+#
+# Absent kiosk.conf, an authorized_keys file on the boot partition is itself
+# the opt-in - putting it there is as physical an act as editing kiosk.conf,
+# and it is the only way to reach a machine whose config file never arrived.
+# An explicit enable_ssh=0 still wins, so turning access off stays possible.
+ssh_wanted() {
+  case "$(conf_get enable_ssh unset)" in
+    0|no|false|off|NO|FALSE|OFF) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+authorized_key() {
+  local key
+  key="$(conf_get ssh_authorized_key)"
+  if [ -z "$key" ] && [ -r "$BOOT_KEYS" ]; then
+    key="$(grep -m1 -E '^(ssh|ecdsa)-' "$BOOT_KEYS" 2>/dev/null)"
+    [ -n "$key" ] && say "using the key from $BOOT_KEYS"
+  fi
+  printf '%s\n' "$key"
+}
+
+write_sshd_config() {
+  local key="$1"
+  install -d -m 755 "$ETC/ssh/sshd_config.d"
+  {
+    printf '# Written by carbide-kiosk-access at boot. Do not edit.\n'
+    printf 'PermitRootLogin no\n'
+    printf 'PermitEmptyPasswords no\n'
+    printf 'KbdInteractiveAuthentication no\n'
+    printf 'X11Forwarding no\n'
+    printf 'AllowTcpForwarding no\n'
+    printf 'AllowAgentForwarding no\n'
+    printf 'MaxAuthTries 3\n'
+    printf 'MaxSessions 2\n'
+    printf 'LoginGraceTime 20\n'
+    printf 'AllowUsers kiosk\n'
+    printf 'HostKey %s\n' "$HOSTKEY"
+    if [ -n "$key" ]; then
+      printf 'PasswordAuthentication no\n'
+      printf 'PubkeyAuthentication yes\n'
+    else
+      printf 'PasswordAuthentication yes\n'
+    fi
+  } > "$DROPIN"
+}
+
+install_credential() {
+  local key="$1" password="$2"
+  if [ -n "$key" ]; then
+    install -d -m 700 -o kiosk -g kiosk /home/kiosk/.ssh
+    printf '%s\n' "$key" > /home/kiosk/.ssh/authorized_keys
+    chmod 600 /home/kiosk/.ssh/authorized_keys
+    chown kiosk:kiosk /home/kiosk/.ssh/authorized_keys
+  else
+    printf 'kiosk:%s\n' "$password" | chpasswd \
+      || alert "could not set the ssh password; the account stays locked"
+  fi
+}
+
+# Port 22 only. The full ruleset - Samba, mDNS, everything else - is applied
+# by carbide-kiosk-config later. If that never runs, this is what the machine
+# is left with, which is the correct thing to be left with.
+open_port_22() {
+  local tmp="$RULESET.access"
+  {
+    printf '#!/usr/sbin/nft -f\n'
+    printf '# Access phase. Replaced by the full ruleset once configuration runs.\n'
+    printf 'flush ruleset\ntable inet filter {\n  chain input {\n'
+    printf '    type filter hook input priority filter; policy drop;\n'
+    printf '    iif lo accept\n    ct state established,related accept\n'
+    printf '    udp sport 67 udp dport 68 accept\n'
+    printf '    tcp dport 22 ct state new limit rate 6/minute burst 3 packets accept\n'
+    printf '  }\n  chain forward { type filter hook forward priority filter; policy drop; }\n'
+    printf '  chain output { type filter hook output priority filter; policy accept; }\n}\n'
+  } > "$tmp"
+
+  # Not fatal, either way. Exiting here once left the shipped closed ruleset
+  # in place on a machine that then reported success - sealed shut, with
+  # nothing anywhere saying so. nft refusing is itself the diagnosis, so say
+  # it and try to load anyway.
+  nft -c -f "$tmp" || alert "the access ruleset is not valid; loading it anyway"
+  if nft -f "$tmp"; then
+    install -m 644 "$tmp" "$RULESET"
+  else
+    alert "could not load the access ruleset; PORT 22 IS SHUT"
+    return 1
+  fi
+}
+
+# Wired DHCP needs no configuration at all, which is why it is the fallback
+# worth having: a machine with a cable is reachable whatever kiosk.conf says,
+# including when there is no kiosk.conf. Wifi is attempted only if an SSID is
+# configured, and only after the port is already open.
+join_network() {
+  local ssid psk country conn="$ETC/NetworkManager/system-connections/carbide-kiosk.nmconnection"
+  ssid="$(conf_get wifi_ssid)"
+  [ -n "$ssid" ] || { say "no wifi_ssid set; relying on a wired connection"; return 0; }
+  psk="$(conf_get wifi_password)"
+  country="$(conf_get wifi_country US)"
+
+  timeout 30 raspi-config nonint do_wifi_country "$country" \
+    || say "could not set the wifi country; carrying on"
+
+  install -d -m 700 "$ETC/NetworkManager/system-connections"
+  {
+    printf '[connection]\nid=carbide-kiosk\ntype=wifi\nautoconnect=true\n\n'
+    printf '[wifi]\nmode=infrastructure\nssid=%s\n\n' "$ssid"
+    if [ -n "$psk" ]; then
+      printf '[wifi-security]\nkey-mgmt=wpa-psk\npsk=%s\n\n' "$psk"
+    fi
+    printf '[ipv4]\nmethod=auto\n\n[ipv6]\nmethod=auto\n'
+  } > "$conn"
+  chmod 600 "$conn"
+  timeout 20 nmcli connection reload || say "NetworkManager reload failed"
+}
+
+main() {
+  local key password addr
+
+  [ -r "$CONF" ] || say "no kiosk.conf on the boot partition; using defaults"
+
+  if ! ssh_wanted; then
+    say "enable_ssh is off; port 22 stays shut by request"
+    join_network
+    return 0
+  fi
+
+  key="$(authorized_key)"
+  password="$(conf_get ssh_password)"
+
+  if [ -z "$key" ] && [ -z "$password" ]; then
+    # Not a failure of this script, but the operator has to know, because the
+    # symptom is identical to a machine that crashed: nothing answers.
+    alert "NO WAY IN: set ssh_authorized_key in kiosk.conf, or put a public"
+    alert "key in $BOOT_KEYS, then reboot. Port 22 stays shut."
+    join_network
+    return 0
+  fi
+
+  # kiosk.conf stays authoritative when it exists: carbide-kiosk-config runs
+  # moments later and closes port 22 unless enable_ssh=1 is actually in the
+  # file. Worth saying, because the door opening and then shutting looks
+  # exactly like a crash from the other end of an ssh client.
+  if [ -r "$CONF" ] && [ "$(conf_get enable_ssh unset)" = unset ]; then
+    alert "enable_ssh is not set in kiosk.conf; configuration will close port 22"
+    alert "set enable_ssh=1 to keep it open past the first few seconds"
+  fi
+
+  say 'opening remote access'
+  # Generated here rather than on /data, which is not mounted this early. The
+  # identity is carried onto the data partition by carbide-kiosk-config once
+  # that exists, so it survives the overlay without changing under anyone.
+  [ -f "$HOSTKEY" ] || ssh-keygen -t ed25519 -N '' -f "$HOSTKEY" -q \
+    || alert "could not generate a host key"
+  chmod 600 "$HOSTKEY" 2>/dev/null || true
+
+  write_sshd_config "$key"
+  install_credential "$key" "$password"
+  open_port_22
+
+  systemctl enable --now ssh 2>/dev/null || alert "sshd did not start"
+
+  say 'joining the network'
+  join_network
+
+  # Written where it can be read from another computer. The address is the
+  # single most useful fact on a machine nobody can find, and the journal that
+  # would otherwise hold it is exactly what cannot be reached.
+  addr="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  if [ -n "$addr" ]; then
+    say "access is up at $addr as user kiosk"
+  else
+    say "access is up, but no address yet; check the network"
+  fi
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main "$@"
+fi

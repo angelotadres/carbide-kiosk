@@ -1,26 +1,33 @@
 [Unit]
-Description=Carbide Motion Kiosk network and remote access
+Description=Carbide Motion Kiosk remote access
 Documentation=https://github.com/angelotadres/carbide-kiosk
-# Deliberately the first thing this image does after the network stack is
-# available, and before first-boot setup. Everything else on this machine can
-# fail; if this has run, the machine can still be reached and diagnosed.
+# The first thing this image does, and the only one whose failure nothing can
+# be diagnosed around. Everything else on this machine can fail; if this has
+# run, the machine can still be reached and looked at.
+#
 # NetworkManager only, deliberately not network.target. This unit brings the
 # network up rather than waiting for it, and waiting would close a cycle:
 # network.target comes after network-pre.target, which comes after
 # nftables.service, which the configuration step is ordered before.
 After=NetworkManager.service
 Before=carbide-firstboot.service carbide-kiosk-config.service
-RequiresMountsFor=/boot/firmware
-ConditionPathExists=/boot/firmware/kiosk.conf
+# No ConditionPathExists. Gating this on kiosk.conf meant a fresh flash - which
+# has no kiosk.conf until someone copies one onto the card - skipped the unit
+# entirely, and systemd reports a skipped condition as success. The result was
+# an unreachable machine with nothing anywhere saying why. The script handles
+# a missing config file itself, out loud.
+#
+# No RequiresMountsFor either: if /boot/firmware is not mounted the script can
+# still open port 22, and being able to log in and see that is the point.
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/sbin/carbide-kiosk-config --access-only
-# Bounded, and failure is not fatal. This unit exists to help when things go
-# wrong; it must never itself become the thing that goes wrong.
+ExecStart=/usr/local/sbin/carbide-kiosk-access
+# Bounded, so a stalled step cannot hold the boot. Failure is deliberately
+# not masked: SuccessExitStatus=0 1 once made an exit that never opened the
+# port look like a success, which is the one outcome nobody could see.
 TimeoutStartSec=90
-SuccessExitStatus=0 1
 StandardOutput=journal+console
 StandardError=journal+console
 

@@ -19,6 +19,8 @@ install -m 644 files/launcher/tint2rc "${ROOTFS_DIR}/etc/xdg/carbide/tint2rc"
 install -d -m 755 "${ROOTFS_DIR}/etc/xdg/openbox"
 install -m 644 files/openbox/rc.xml "${ROOTFS_DIR}/etc/xdg/openbox/rc.xml"
 
+install -m 755 files/usr/local/sbin/carbide-kiosk-access \
+	"${ROOTFS_DIR}/usr/local/sbin/carbide-kiosk-access"
 install -m 755 files/usr/local/sbin/carbide-kiosk-config \
 	"${ROOTFS_DIR}/usr/local/sbin/carbide-kiosk-config"
 install -m 644 files/carbide-kiosk-access.service \

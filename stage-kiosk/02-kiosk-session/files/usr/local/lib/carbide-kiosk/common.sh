@@ -16,6 +16,16 @@ kiosk_step() {
   # computer when there is no keyboard and no network to ask with.
   { printf '%s %s\n' "$(date '+%H:%M:%S')" "$*" >> /boot/firmware/first-boot.log; } 2>/dev/null || true
 }
+
+# A failure the operator has to be able to see. kiosk_log reaches only the
+# journal, which is exactly what cannot be read on a machine that has no way
+# in - the situation these messages are about.
+kiosk_alert() {
+  printf 'carbide-kiosk: %s\n' "$*" >&2
+  { printf '  !!! %s\n' "$*" > /dev/tty1; } 2>/dev/null || true
+  { printf '%s !!! %s\n' "$(date '+%H:%M:%S')" "$*" >> /boot/firmware/first-boot.log; } 2>/dev/null || true
+}
+
 kiosk_die() { kiosk_log "$*"; exit 1; }
 
 # Read one key from kiosk.conf, falling back to a default.
