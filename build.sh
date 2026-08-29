@@ -50,6 +50,41 @@ fetch_pigen() {
   fi
 }
 
+# pi-gen assumes a Linux host. On an Apple Silicon Mac two of its assumptions
+# are wrong at once, and the second is only reachable after the first.
+#
+# It picks its build container's base image from `uname -m`. macOS reports
+# arm64 where Linux reports aarch64, so pi-gen misses its own 64-bit case and
+# lands on a native 64-bit Debian instead of a 32-bit one. Then scripts/common
+# runs the debootstrap and every chroot under `setarch linux32`, which fails:
+# Docker Desktop's linuxkit kernel has no AArch32 support, and Apple Silicon
+# cannot execute 32-bit ARM natively at all. The bootstrap is invoked with
+# `|| true`, so that failure is swallowed and only surfaces one stage later as
+# an empty rootfs - which is what "cannot create stage0/rootfs/etc/apt/" is.
+#
+# An armhf base image is already 32-bit and runs under emulation, so the
+# personality change is both unavailable and unnecessary. Set one, and drop
+# the setarch calls that would otherwise fail inside it.
+patch_pigen_for_apple_silicon() {
+  [ "$(uname -s)" = "Darwin" ] || return 0
+  case "$(uname -m)" in arm64|aarch64) ;; *) return 0 ;; esac
+
+  # A 32-bit ARM build container, which pi-gen's own arch detection cannot
+  # reach from macOS.
+  sed -i.orig -E 's@^( *)BASE_IMAGE=debian:bookworm$@\1BASE_IMAGE=arm32v7/debian:bookworm@' \
+    "$PIGEN_DIR/build-docker.sh"
+  grep -q 'BASE_IMAGE=arm32v7/debian:bookworm' "$PIGEN_DIR/build-docker.sh" \
+    || die "could not point pi-gen at a 32-bit base image"
+
+  # Already 32-bit, so these only fail. Removing the prefix leaves capsh to
+  # run exactly as it would have.
+  sed -i.orig 's@setarch linux32 capsh@capsh@g' "$PIGEN_DIR/scripts/common"
+  ! grep -q 'setarch linux32' "$PIGEN_DIR/scripts/common" \
+    || die "could not remove the setarch calls from pi-gen"
+
+  log "patched pi-gen for an Apple Silicon host"
+}
+
 stage_into_pigen() {
   rm -rf "$PIGEN_DIR/stage-kiosk"
   cp -R "$STAGE_SRC" "$PIGEN_DIR/stage-kiosk"
@@ -107,6 +142,7 @@ main() {
   stage_carbide_motion
   stage_config_template
   fetch_pigen
+  patch_pigen_for_apple_silicon
   stage_into_pigen
   write_pigen_config
   if [ "${CARBIDE_STAGE_ONLY:-0}" = "1" ]; then
