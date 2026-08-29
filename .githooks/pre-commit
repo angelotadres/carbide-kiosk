@@ -28,8 +28,9 @@ scripts() {
     | grep -vE '\.service$|\.timer$|\.conf$|\.desktop$'
 }
 
+docker_available() { docker info >/dev/null 2>&1; }
+
 run_in_docker() {
-  docker info >/dev/null 2>&1 || return 1
   docker run --rm -v "$REPO_ROOT:/work" -w /work "$@"
 }
 
@@ -39,9 +40,11 @@ if command -v shellcheck >/dev/null 2>&1; then
   ran=1
   # shellcheck disable=SC2046
   shellcheck -x -e SC1091,SC2154 $(scripts) || failed=1
-elif run_in_docker koalaman/shellcheck:stable \
-       -x -e SC1091,SC2154 $(scripts) 2>/dev/null; then
+elif docker_available; then
   ran=1
+  # shellcheck disable=SC2046
+  run_in_docker koalaman/shellcheck:stable \
+    -x -e SC1091,SC2154 $(scripts) || failed=1
 else
   printf 'pre-commit: shellcheck unavailable (no binary, no Docker)\n' >&2
 fi
@@ -51,10 +54,32 @@ fi
 if command -v bats >/dev/null 2>&1; then
   ran=1
   bats "${SUITES[@]}" || failed=1
-elif run_in_docker bats/bats:latest "${SUITES[@]}"; then
+elif docker_available; then
   ran=1
+  run_in_docker bats/bats:latest "${SUITES[@]}" || failed=1
 else
   printf 'pre-commit: bats unavailable (no binary, no Docker)\n' >&2
+fi
+
+# --- kiosk.conf documents what the code reads ---------------------------
+#
+# Pure grep, so it needs nothing installed and always runs. It is here
+# because prose can trip it: a comment reading "kiosk_get in common.sh"
+# registers as a setting named "in", which is how it first failed.
+
+ran=1
+used="$(grep -rhoE 'kiosk_get [a-z_]+|kiosk_enabled [a-z_]+' stage-kiosk/ \
+  | awk '{print $2}' | sort -u)"
+documented="$(grep -oE '^[a-z_]+=' config/kiosk.conf.example | tr -d '=' | sort -u)"
+undocumented="$(comm -23 <(printf '%s\n' "$used") <(printf '%s\n' "$documented"))"
+unread="$(comm -13 <(printf '%s\n' "$used") <(printf '%s\n' "$documented"))"
+if [ -n "$undocumented" ]; then
+  printf 'pre-commit: read but undocumented in kiosk.conf.example:\n%s\n' "$undocumented" >&2
+  failed=1
+fi
+if [ -n "$unread" ]; then
+  printf 'pre-commit: documented in kiosk.conf.example but never read:\n%s\n' "$unread" >&2
+  failed=1
 fi
 
 if [ "$ran" -eq 0 ]; then

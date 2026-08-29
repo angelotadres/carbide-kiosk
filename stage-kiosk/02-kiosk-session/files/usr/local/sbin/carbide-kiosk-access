@@ -58,7 +58,7 @@ alert() {
 # helper this script never calls would otherwise stop it loading at all.
 #
 # Values run to the end of the line so a '#' in a password needs no escaping,
-# matching kiosk_get in common.sh. tests/access.bats holds both to the same
+# matching common.sh and its kiosk_get. tests/access.bats holds both to the same
 # cases so the two cannot drift apart unnoticed.
 conf_get() {
   local key="$1" val=""

@@ -170,6 +170,10 @@ mount_data_partition() {
 # is booting and raspi-config leaves config.txt alone - so looking only for
 # the explicit line reported a correctly installed overlay as incomplete and
 # reverted a working machine to a writable root.
+# The two parameters exist so tests/overlay_initramfs.bats can point this at a
+# temporary boot directory and name a kernel release. Production calls take
+# the defaults, which is what shellcheck is objecting to.
+# shellcheck disable=SC2120
 overlay_initramfs() {
   local bootdir="${1:-/boot/firmware}" release="${2:-$(uname -r)}"
   local config="$bootdir/config.txt" name
