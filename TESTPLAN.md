@@ -8,9 +8,23 @@ Work through it in order. A failure early on makes the later steps meaningless, 
 
 You need a Pi 5, an SD card of 8 GB or more, and a display of at least 1280x1024 — Carbide Motion refuses to run smaller. The Pi 5 uses micro-HDMI, so check the cable. You also need a USB keyboard, the Shapeoko and its USB cable, a Mac or PC on the same network, and a way to cut power abruptly. A switched power strip is ideal; pulling the plug works.
 
+## 0. Prove the way in, before anything else
+
+Do this first and on its own, because every other step in this plan is diagnosed through it. It is also the step that has silently failed on every attempt so far, and the fix for that is unproven on hardware.
+
+Flash `image_2026-08-29-carbide-kiosk.img.xz` with Raspberry Pi Imager, declining its customisation settings. Re-insert the card and put **only** a file named `authorized_keys` on the small partition, holding one public key line — no `kiosk.conf` at all. Connect Ethernet rather than WiFi: wired DHCP needs no configuration, so it cannot be broken by a config file that is not there.
+
+Power on and wait two minutes.
+
+**Pass:** `ssh kiosk@<address>` logs in. The screen and `first-boot.log` on the small partition both say `access is up at <address>`.
+
+**If it fails,** the log on the small partition is the diagnosis and it is readable from any computer with a card reader. `NO WAY IN` means no credential was found. `PORT 22 IS SHUT` means the firewall refused the ruleset. Nothing at all from `carbide-kiosk-access` means the unit never ran, which is the original defect returning.
+
+Power down and take the card out before continuing.
+
 ## 1. Flash and configure
 
-Flash `image_2026-08-27-carbide-kiosk.img.xz` with Raspberry Pi Imager. When it offers to apply customisation settings, decline. Those settings write their own first-boot configuration and will collide with this image's.
+Flash `image_2026-08-29-carbide-kiosk.img.xz` with Raspberry Pi Imager. When it offers to apply customisation settings, decline. Those settings write their own first-boot configuration and will collide with this image's.
 
 Re-insert the card. One small partition mounts on your machine; the large one will not, and that is expected. Copy `kiosk.conf.example` to `kiosk.conf` on the partition that mounted, and set at minimum:
 
@@ -20,6 +34,8 @@ samba_password=pick-something-real
 ```
 
 Add `wifi_ssid` and `wifi_password` if you are not on Ethernet.
+
+Set `enable_ssh=1` and `ssh_authorized_key` as well. Once a `kiosk.conf` exists it is authoritative, so leaving `enable_ssh` unset closes port 22 a few seconds into the boot even though step 0 opened it — the access script warns about exactly this on the console.
 
 **Pass:** `kiosk.conf` sits next to `config.txt` on the small partition.
 
