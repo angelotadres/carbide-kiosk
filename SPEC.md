@@ -76,6 +76,10 @@ Verified on a Pi 5 with a 1920x1200 touch panel and a Shapeoko 5 Pro, over SSH, 
 
 Five things were wrong and are fixed. Carbide Motion under-declares its dependencies: it names seven Qt5 libraries and links against an eighth, `libQt5PrintSupport`, so the image needs that explicitly and CI now asks the linker rather than trusting `Depends`. The Shapeoko 5 Pro presents as USB vendor `16d0`, which no published list predicted. The kiosk account was not in the share group, so Carbide Motion could not open the very directory Samba writes to. `matchbox-window-manager` has no window layers, so no on-screen keyboard could float above the application. And the Raspberry Pi OS first-boot hook expands the root partition across the whole card, leaving nothing for the data partition.
 
+A clean flash on 2026-08-29 took the first-boot path end to end for the first time. The data partition is carved from the space the root partition leaves, formatted and mounted, and the machine disables its own first-boot unit and reboots. Three defects surfaced on that run and are fixed. The overlay verification looked for an explicit `initramfs` line in `config.txt`, which this base image does not carry because it relies on `auto_initramfs=1`, so a correctly installed overlay was reported incomplete and the machine came up with a writable root. `carbide-kiosk.service` named a `WorkingDirectory` that only `configure_samba` creates, which turns a configuration failure into a session that cannot start at all - the outcome `Wants=` rather than `Requires=` exists to prevent. And the access unit could exit without opening port 22 while `SuccessExitStatus=0 1` reported that exit as success, leaving a machine with no way in and nothing anywhere saying so.
+
+That third defect was a symptom. Chasing it found two more ways the same image locks itself out, both of which are now closed. The access unit was gated on `ConditionPathExists=/boot/firmware/kiosk.conf`, and a freshly flashed card has no `kiosk.conf` until someone copies one onto it - so on every clean flash systemd skipped the unit outright and reported the skip as success. Underneath that, the access path was a `--access-only` flag on the 450-line configuration script, which meant a syntax error anywhere in that file, on any code path, took the way in down with it.
+
 The one capability that is not available: no keyboard can appear when a text field is focused. That needs the application to publish focus over accessibility, and Carbide Motion does not. The keyboard is summoned by hand instead.
 
 ### Kiosk session
@@ -97,6 +101,10 @@ The Samba account is separate, created at boot from `kiosk.conf` with a fixed UI
 ### Network exposure
 
 `nftables` with a default-drop input policy. Permitted inbound: loopback, established and related, and Samba (`445/tcp`, `139/tcp`, `137-138/udp`). mDNS (`5353/udp`, for macOS Finder discovery) is opt-in via `enable_mdns=1`, and ICMP echo via `enable_ping=1`. Everything else is dropped.
+
+Remote access is a separate unit running a separate script, `carbide-kiosk-access`, ordered before first-boot setup and before configuration. It shares no code with anything it might have to diagnose: it reads `kiosk.conf` with its own four-line reader rather than sourcing the shared library, and it neither sources nor runs the configuration script. It always runs, and every outcome - including refusing to open the port - is written to `tty1` and to `first-boot.log` on the boot partition, never only to the journal, which is unreadable on exactly the machine these messages are about.
+
+Credentials come from `kiosk.conf` or from a plain `authorized_keys` file on the boot partition. The second is the way back into a machine whose config file never arrived or cannot be parsed; dropping a key next to it is as physical an act as editing it. Nothing is baked into the image, so no published image carries a credential. Once a `kiosk.conf` does exist it is authoritative: configuration runs moments later and closes the port again unless `enable_ssh=1` is actually set, and the access script says so on the console when it sees that combination, because a door that opens and shuts looks identical to a crash from the other end.
 
 SSH is off by default and opens only when `enable_ssh=1` is paired with a credential. `enable_ssh=1` on its own leaves the port shut: an open port onto an account nobody can authenticate against is worse than no port. A key in `ssh_authorized_key` is preferred and disables password authentication outright; `ssh_password` exists as a fallback and is stored in clear text on the card.
 
@@ -213,10 +221,11 @@ carbide-kiosk/
 
 ### Not yet verified
 
-- [ ] A clean flash of the current image on a blank card, coming up unattended. Everything confirmed above was reached by repairing the running machine over SSH; the first-boot path itself has still never succeeded end to end.
+- [ ] A clean flash reaching Carbide Motion unattended. First boot itself now runs end to end, but the session did not start on the 2026-08-29 attempt and the fixes for that are unproven on hardware.
 
+- [ ] Confirm the access unit opens port 22 before first-boot setup, so a boot that fails anywhere else is still reachable. This is the guarantee everything else is diagnosed through, and it has never held on hardware. Confirm it specifically on a card with no `kiosk.conf` and only an `authorized_keys` file, which is the case that used to lock the machine out silently.
+- [ ] Confirm the overlay engages, so the root is read-only and the machine tolerates losing power
 - [ ] Confirm `agetty --autologin` accepts an account whose password field is `*`, so the physical console actually works
-- [ ] Boot the built image and confirm the first-boot sequence completes and reboots into Carbide Motion
 
 ### Hardware confirmation
 

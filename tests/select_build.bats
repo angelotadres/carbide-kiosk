@@ -68,7 +68,9 @@ setup() {
   run main "$dir"
   [ "$status" -eq 0 ]
   # bats folds stderr into $output, and the script logs its choice there.
-  [ "${lines[-1]}" = "$dir/carbidemotion-654.deb" ]
+  # Indexed from the end rather than with [-1], which needs bash 4.3 and so
+  # fails on macOS, where the pre-commit hook runs against the system bash.
+  [ "$(printf '%s\n' "$output" | tail -n 1)" = "$dir/carbidemotion-654.deb" ]
 }
 
 @test "no offline package and no network is a hard failure" {

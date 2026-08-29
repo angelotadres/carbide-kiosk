@@ -1,6 +1,6 @@
 # Hardware test plan
 
-Nothing in this image has run on a Raspberry Pi. This plan is ordered by risk: the steps most likely to fail come first, so a bad image is found in ten minutes rather than two hours. Each step says what a pass looks like, what the likely failure is, and what to capture if it fails.
+First boot completes and reboots itself, confirmed on 2026-08-29. What has never worked is the step after it: the machine reaching Carbide Motion unattended. The plan is ordered by risk: the steps most likely to fail come first, so a bad image is found in ten minutes rather than two hours. Each step says what a pass looks like, what the likely failure is, and what to capture if it fails.
 
 Work through it in order. A failure early on makes the later steps meaningless, so stop and report rather than pressing ahead.
 
@@ -10,7 +10,7 @@ You need a Pi 5, an SD card of 8 GB or more, and a display of at least 1280x1024
 
 ## 1. Flash and configure
 
-Flash `image_2026-08-26-carbide-kiosk.img.xz` with Raspberry Pi Imager. When it offers to apply customisation settings, decline. Those settings write their own first-boot configuration and will collide with this image's.
+Flash `image_2026-08-27-carbide-kiosk.img.xz` with Raspberry Pi Imager. When it offers to apply customisation settings, decline. Those settings write their own first-boot configuration and will collide with this image's.
 
 Re-insert the card. One small partition mounts on your machine; the large one will not, and that is expected. Copy `kiosk.conf.example` to `kiosk.conf` on the partition that mounted, and set at minimum:
 

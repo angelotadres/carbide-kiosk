@@ -12,6 +12,16 @@ cd "$REPO_ROOT"
 ran=0
 failed=0
 
+# The unit and overlay suites guard the two things that leave no way in when
+# they regress: a visible access failure, and a session that still starts.
+SUITES=(
+  tests/select_build.bats
+  tests/kiosk_conf.bats
+  tests/overlay_initramfs.bats
+  tests/units.bats
+  tests/access.bats
+)
+
 scripts() {
   find . -path ./pi-gen -prune -o -type f \
     \( -name '*.sh' -o -name '00-run.sh' -o -name 'carbide-*' \) -print \
@@ -40,9 +50,8 @@ fi
 
 if command -v bats >/dev/null 2>&1; then
   ran=1
-  bats tests/select_build.bats tests/kiosk_conf.bats || failed=1
-elif run_in_docker bats/bats:latest \
-       tests/select_build.bats tests/kiosk_conf.bats; then
+  bats "${SUITES[@]}" || failed=1
+elif run_in_docker bats/bats:latest "${SUITES[@]}"; then
   ran=1
 else
   printf 'pre-commit: bats unavailable (no binary, no Docker)\n' >&2
