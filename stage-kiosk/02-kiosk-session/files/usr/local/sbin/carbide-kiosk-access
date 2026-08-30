@@ -154,8 +154,8 @@ open_port_22() {
   # in place on a machine that then reported success - sealed shut, with
   # nothing anywhere saying so. nft refusing is itself the diagnosis, so say
   # it and try to load anyway.
-  nft -c -f "$tmp" || alert "the access ruleset is not valid; loading it anyway"
-  if nft -f "$tmp"; then
+  timeout 15 nft -c -f "$tmp" || alert "the access ruleset is not valid; loading it anyway"
+  if timeout 15 nft -f "$tmp"; then
     install -m 644 "$tmp" "$RULESET"
   else
     alert "could not load the access ruleset; PORT 22 IS SHUT"
@@ -223,18 +223,38 @@ main() {
   fi
 
   say 'opening remote access'
+  # Every step below says what it is about to do before doing it. The unit is
+  # bounded at 90 seconds and a step that hangs is killed with no further
+  # output, so without a breadcrumb ahead of each one the log ends on the last
+  # thing that succeeded and names nothing. That is exactly how the
+  # `systemctl --now` deadlock below cost a whole test run to find.
+  say '  host key'
   # Generated here rather than on /data, which is not mounted this early. The
   # identity is carried onto the data partition by carbide-kiosk-config once
   # that exists, so it survives the overlay without changing under anyone.
-  [ -f "$HOSTKEY" ] || ssh-keygen -t ed25519 -N '' -f "$HOSTKEY" -q \
+  [ -f "$HOSTKEY" ] || timeout 30 ssh-keygen -t ed25519 -N '' -f "$HOSTKEY" -q \
     || alert "could not generate a host key"
   chmod 600 "$HOSTKEY" 2>/dev/null || true
 
+  say '  sshd configuration'
   write_sshd_config "$key"
+  say '  credential'
   install_credential "$key" "$password"
+  say '  firewall'
   open_port_22
 
-  systemctl enable --now ssh 2>/dev/null || alert "sshd did not start"
+  # Never `--now`, and never a blocking start. This runs inside a unit systemd
+  # is still starting, so asking it to start ssh.service and waiting closes a
+  # loop: ssh.service is ordered After=network.target, network.target after
+  # network-pre.target, and nftables.service sits under that - the very
+  # ordering this unit exists outside of. The wait never returns, the unit is
+  # killed at TimeoutStartSec, and join_network below never runs at all, so a
+  # machine with no wired fallback ends up with no network and no way in.
+  # Queue the job and move on; sshd comes up while this script finishes.
+  say '  starting sshd'
+  timeout 15 systemctl enable ssh 2>/dev/null || alert "could not enable sshd"
+  timeout 15 systemctl start --no-block ssh 2>/dev/null \
+    || alert "sshd did not start"
 
   say 'joining the network'
   join_network

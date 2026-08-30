@@ -28,6 +28,17 @@ exit 0
 STUB
     chmod 755 "$STUBS/$tool"
   done
+  # `timeout` is coreutils - always there on the Debian image, absent on
+  # macOS, and commit 834de84 runs these suites on both. Unstubbed, every
+  # call the script bounds would simply not run here. Drops the duration and
+  # execs the rest, so the stub below still records what was asked for.
+  cat > "$STUBS/timeout" <<'STUB'
+#!/bin/sh
+shift
+exec "$@"
+STUB
+  chmod 755 "$STUBS/timeout"
+
   # ssh-keygen has to leave a file behind or the script cannot chmod it.
   cat > "$STUBS/ssh-keygen" <<STUB
 #!/bin/sh
@@ -68,7 +79,7 @@ called() { grep -q "$1" "$BATS_TEST_TMPDIR/calls" 2>/dev/null; }
   printf 'ssh-ed25519 AAAATESTKEY carbide@test\n' > "$CARBIDE_BOOT_DIR/authorized_keys"
   run main
   [ "$status" -eq 0 ]
-  called "systemctl enable --now ssh"
+  called "systemctl start --no-block ssh"
   grep -q "dport 22" "$CARBIDE_ETC_DIR/nftables.conf"
 }
 
@@ -93,13 +104,13 @@ called() { grep -q "$1" "$BATS_TEST_TMPDIR/calls" 2>/dev/null; }
   run main
   [ "$status" -eq 0 ]
   grep -q "port 22 stays shut by request" "$LOG"
-  ! called "systemctl enable --now ssh"
+  ! called "systemctl start"
 }
 
 @test "a key in kiosk.conf opens the port" {
   printf 'enable_ssh=1\nssh_authorized_key=ssh-ed25519 AAAAKEY t@t\n' > "$CARBIDE_BOOT_DIR/kiosk.conf"
   run main
-  called "systemctl enable --now ssh"
+  called "systemctl start --no-block ssh"
   grep -q "PubkeyAuthentication yes" "$CARBIDE_ETC_DIR/ssh/sshd_config.d/carbide-kiosk.conf"
   grep -q "PasswordAuthentication no" "$CARBIDE_ETC_DIR/ssh/sshd_config.d/carbide-kiosk.conf"
 }
@@ -158,6 +169,57 @@ called() { grep -q "$1" "$BATS_TEST_TMPDIR/calls" 2>/dev/null; }
   ssh_at=$(printf '%s\n' "$output" | grep -n 'open_port_22' | head -1 | cut -d: -f1)
   net_at=$(printf '%s\n' "$output" | grep -n 'join_network' | tail -1 | cut -d: -f1)
   [ -n "$ssh_at" ] && [ -n "$net_at" ] && [ "$ssh_at" -lt "$net_at" ]
+}
+
+# The 2026-08-30 lockout. `systemctl enable --now ssh` asks systemd to start
+# a unit and waits for it, from inside a unit systemd is still starting.
+# ssh.service is ordered After=network.target, which sits downstream of the
+# nftables ordering this unit deliberately runs outside of, so the wait never
+# returned. The unit was killed at TimeoutStartSec=90, join_network below it
+# never ran, and a machine with no wired fallback came up with no network and
+# no way in - having logged nothing since "opening remote access".
+@test "sshd is queued, never waited on" {
+  printf 'enable_ssh=1\nssh_authorized_key=ssh-ed25519 AAAAKEY t@t\n' > "$CARBIDE_BOOT_DIR/kiosk.conf"
+  run main
+  called "systemctl start --no-block ssh"
+  ! grep -q -e "--now" "$BATS_TEST_TMPDIR/calls"
+}
+
+@test "no blocking systemctl call survives anywhere in the script" {
+  # Mechanical rather than behavioural: --now is the whole defect, and it must
+  # not come back on a path no test happens to exercise.
+  ! grep -v '^[[:space:]]*#' "$SCRIPT" | grep -q -e '--now'
+}
+
+@test "the network is joined even though sshd was only queued" {
+  # The point of not waiting. join_network runs after the ssh block, so
+  # anything that stalls there takes the network down with it.
+  printf 'enable_ssh=1\nssh_authorized_key=ssh-ed25519 AAAAKEY t@t\nwifi_ssid=workshop\nwifi_password=secret\n' \
+    > "$CARBIDE_BOOT_DIR/kiosk.conf"
+  run main
+  [ "$status" -eq 0 ]
+  called "nmcli connection reload"
+}
+
+# A step that hangs is killed with no output of its own, so the log ends on
+# the last thing that finished. Announcing each step before running it is what
+# turns "it stopped somewhere after opening remote access" into a named call.
+@test "each step announces itself before it runs" {
+  printf 'enable_ssh=1\nssh_authorized_key=ssh-ed25519 AAAAKEY t@t\n' > "$CARBIDE_BOOT_DIR/kiosk.conf"
+  run main
+  grep -q "host key" "$LOG"
+  grep -q "sshd configuration" "$LOG"
+  grep -q "credential" "$LOG"
+  grep -q "firewall" "$LOG"
+  grep -q "starting sshd" "$LOG"
+}
+
+@test "every step that can hang is bounded" {
+  # The unit budget is 90 seconds in total, so no single call may be able to
+  # spend it. The wifi calls were already capped; these were not.
+  grep -q 'timeout [0-9]* ssh-keygen' "$SCRIPT"
+  grep -q 'timeout [0-9]* nft -f' "$SCRIPT"
+  grep -q 'timeout [0-9]* systemctl' "$SCRIPT"
 }
 
 @test "a missing wifi_ssid falls back to wired rather than failing" {

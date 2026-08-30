@@ -6,7 +6,12 @@
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   UNITS="$REPO_ROOT/stage-kiosk/02-kiosk-session/files"
+  SBIN="$UNITS/usr/local/sbin"
 }
+
+# Code lines only. The comments in these scripts name the directive they exist
+# to warn against, and a check that reads them can never pass.
+code() { grep -v '^[[:space:]]*#' "$1"; }
 
 @test "the access unit does not report a failed run as success" {
   # SuccessExitStatus=0 1 once turned an exit that never opened port 22 into
@@ -22,6 +27,39 @@ setup() {
 
 @test "the access unit is bounded so it cannot hold the boot" {
   grep -qE '^TimeoutStartSec=[0-9]+' "$UNITS/carbide-kiosk-access.service"
+}
+
+# --- the deadlock of 2026-08-30 -----------------------------------------
+#
+# Both boot scripts run as units systemd is still starting, so neither may ask
+# systemd to start another unit and wait for it. carbide-kiosk-config makes
+# that fatal rather than merely slow: it declares Before=ssh.service, so
+# ssh.service cannot start until the script returns, and `--now` does not
+# return until ssh.service has started. The pair waited on each other until
+# TimeoutStartSec, and a clean flash came up with no network and no way in.
+
+@test "the access script never waits for a unit to start" {
+  ! code "$SBIN/carbide-kiosk-access" | grep -q -e 'enable --now'
+  code "$SBIN/carbide-kiosk-access" | grep -q 'systemctl start --no-block ssh'
+}
+
+@test "the configuration script never waits for a unit to start" {
+  ! code "$SBIN/carbide-kiosk-config" | grep -q -e 'enable --now'
+  code "$SBIN/carbide-kiosk-config" | grep -q 'systemctl start --no-block ssh'
+}
+
+@test "the configuration unit is still ordered before sshd" {
+  # The ordering is correct and worth keeping: configuration owns the firewall
+  # and the credential, so sshd must not accept a connection before it has
+  # run. It is the blocking call that was wrong, not this.
+  grep -q '^Before=.*ssh.service' "$UNITS/carbide-kiosk-config.service"
+}
+
+@test "closing the port is still allowed to block" {
+  # disable --now is a stop job. Stop jobs do not wait on Before= start
+  # ordering, and this is the path that shuts port 22 - it should complete
+  # before the script moves on, not be queued behind it.
+  code "$SBIN/carbide-kiosk-config" | grep -q 'disable --now ssh'
 }
 
 @test "a missing working directory does not stop the session" {

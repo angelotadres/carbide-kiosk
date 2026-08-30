@@ -240,7 +240,10 @@ configure_firewall() {
   rendering && return 0
   nft -f "$ruleset" || kiosk_die "could not load the nftables ruleset"
   if kiosk_enabled enable_mdns; then
-    systemctl enable --now avahi-daemon 2>/dev/null || kiosk_log "avahi is not installed"
+    # Queued, not waited on: see the ssh call below for why a blocking start
+    # from inside this unit cannot be allowed to return late.
+    systemctl enable avahi-daemon 2>/dev/null || kiosk_log "avahi is not installed"
+    systemctl start --no-block avahi-daemon 2>/dev/null || true
   else
     systemctl disable --now avahi-daemon 2>/dev/null
   fi
@@ -328,7 +331,14 @@ configure_ssh() {
     kiosk_log "ssh enabled with a password; prefer ssh_authorized_key"
   fi
 
-  systemctl enable --now ssh 2>/dev/null || kiosk_log "could not start sshd"
+  # Never `--now`. This unit declares Before=ssh.service, so systemd will not
+  # start ssh.service until this script returns - and `--now` does not return
+  # until ssh.service has started. The two wait on each other until
+  # TimeoutStartSec=120 kills this unit, taking the Samba, mDNS and udev
+  # configuration below it down as well. Queue the job and let it run once
+  # this unit is out of the way.
+  systemctl enable ssh 2>/dev/null || kiosk_log "could not enable sshd"
+  systemctl start --no-block ssh 2>/dev/null || kiosk_log "could not start sshd"
 }
 
 # Just enough firewall to be reachable. The full ruleset is applied later by
