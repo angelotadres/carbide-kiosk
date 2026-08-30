@@ -80,6 +80,10 @@ A clean flash on 2026-08-29 took the first-boot path end to end for the first ti
 
 That third defect was a symptom. Chasing it found two more ways the same image locks itself out, both of which are now closed. The access unit was gated on `ConditionPathExists=/boot/firmware/kiosk.conf`, and a freshly flashed card has no `kiosk.conf` until someone copies one onto it - so on every clean flash systemd skipped the unit outright and reported the skip as success. Underneath that, the access path was a `--access-only` flag on the 450-line configuration script, which meant a syntax error anywhere in that file, on any code path, took the way in down with it.
 
+A clean flash on 2026-08-30 reached Carbide Motion unattended for the first time: the application, the floating keyboard and the session came up on their own with no desktop and no login prompt. Nothing else on that machine worked, because two units deadlocked against systemd in the same way. `carbide-kiosk-access` called `systemctl enable --now ssh`, which asks systemd to start a unit and waits, from inside a unit systemd is still starting; the wait never returned, the unit was killed at `TimeoutStartSec=90`, and `join_network` below it never ran - so a card configured for wifi and no wired fallback came up with no network, no share and no way in, having logged nothing since `opening remote access`. `carbide-kiosk-config` had the same call and a worse version of the problem: it declares `Before=ssh.service`, so ssh.service could not start until the script returned and the script would not return until ssh.service had started. Both now enable the unit and queue its start with `--no-block`, every step announces itself before running so the next hang names the call that caused it, and `tests/units.bats` refuses either form of the blocking call in either script.
+
+That run also showed the read-only root silently not happening. `raspi-config nonint enable_overlayfs` is a wrapper over the `overlayroot` package and fetches it at the moment it is asked, which is first boot - on a machine that had no network, because of the deadlock above. apt failed, raspi-config exited 0 anyway, and `overlayroot=tmpfs` went onto the kernel command line with nothing installed to act on it. The guard did not catch it: it checked that an initramfs file existed, and every image ships one, so it passed on the file the build had written twenty minutes earlier. Both packages are baked into the image now so first boot needs no network, and the guard checks that they are installed and that the initramfs really carries the overlay hook.
+
 The one capability that is not available: no keyboard can appear when a text field is focused. That needs the application to publish focus over accessibility, and Carbide Motion does not. The keyboard is summoned by hand instead.
 
 ### Kiosk session
@@ -209,7 +213,8 @@ carbide-kiosk/
 - [x] `nft -c -f` over the rendered ruleset
 - [x] Render-only mode on the config generator, so CI validates the real generator rather than a copy of it
 - [x] `bats` suite asserting the status writer strips configured passwords from its output
-- [x] `tests/render-config.sh`: 33 assertions over the generated share, firewall, hostname and udev rule, including that a missing library aborts before writing anything
+- [x] `bats` suite refusing a blocking `systemctl` start in either boot script, and refusing an overlay the initramfs cannot actually perform
+- [x] `tests/render-config.sh`: 49 assertions over the generated share, firewall, hostname and udev rule, including that a missing library aborts before writing anything
 - [x] Pre-commit hook running `shellcheck` and the `bats` suites, so the conventions hold for any tool that writes to this repo
 
 ### CI and release
@@ -221,14 +226,13 @@ carbide-kiosk/
 
 ### Not yet verified
 
-- [ ] A clean flash reaching Carbide Motion unattended. First boot itself now runs end to end, but the session did not start on the 2026-08-29 attempt and the fixes for that are unproven on hardware.
-
-- [ ] Confirm the access unit opens port 22 before first-boot setup, so a boot that fails anywhere else is still reachable. This is the guarantee everything else is diagnosed through, and it has never held on hardware. Confirm it specifically on a card with no `kiosk.conf` and only an `authorized_keys` file, which is the case that used to lock the machine out silently.
-- [ ] Confirm the overlay engages, so the root is read-only and the machine tolerates losing power
+- [ ] Confirm the access unit opens port 22 before first-boot setup, so a boot that fails anywhere else is still reachable. This is the guarantee everything else is diagnosed through, and it has never held on hardware. It failed again on 2026-08-30, to the `systemctl --now` deadlock described above. Confirm it specifically on a card with no `kiosk.conf` and only an `authorized_keys` file, which is the case that used to lock the machine out silently.
+- [ ] Confirm the overlay engages, so the root is read-only and the machine tolerates losing power. It did not on 2026-08-30, and reported success; confirm by checking that `/` is an overlay mount on a booted machine, not by trusting the first-boot log.
 - [ ] Confirm `agetty --autologin` accepts an account whose password field is `*`, so the physical console actually works
 
 ### Hardware confirmation
 
+- [x] A clean flash reaching Carbide Motion unattended, confirmed on 2026-08-30
 - [ ] Verify Carbide Motion renders acceptably on the intended display and typical job sizes
 - [ ] Pull the power mid-job, ten times, and confirm clean boots with an intact share
 

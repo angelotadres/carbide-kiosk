@@ -18,7 +18,7 @@ Power on and wait two minutes.
 
 **Pass:** `ssh kiosk@<address>` logs in. The screen and `first-boot.log` on the small partition both say `access is up at <address>`.
 
-**If it fails,** the log on the small partition is the diagnosis and it is readable from any computer with a card reader. `NO WAY IN` means no credential was found. `PORT 22 IS SHUT` means the firewall refused the ruleset. Nothing at all from `carbide-kiosk-access` means the unit never ran, which is the original defect returning.
+**If it fails,** the log on the small partition is the diagnosis and it is readable from any computer with a card reader. `NO WAY IN` means no credential was found. `PORT 22 IS SHUT` means the firewall refused the ruleset. Nothing at all from `carbide-kiosk-access` means the unit never ran, which is the original defect returning. A log that stops after `opening remote access` means a step hung and systemd killed the unit at ninety seconds; each step now names itself first, so the last line is the call that hung.
 
 Power down and take the card out before continuing.
 
