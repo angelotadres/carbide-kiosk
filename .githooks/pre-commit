@@ -18,6 +18,7 @@ SUITES=(
   tests/select_build.bats
   tests/kiosk_conf.bats
   tests/overlay_initramfs.bats
+  tests/overlay_guard.bats
   tests/units.bats
   tests/access.bats
 )

@@ -41,7 +41,8 @@ jobs:
         run: >
           bats tests/select_build.bats tests/kiosk_conf.bats
           tests/status_redaction.bats tests/partition_start.bats
-          tests/overlay_initramfs.bats tests/units.bats tests/access.bats
+          tests/overlay_initramfs.bats tests/overlay_guard.bats
+          tests/units.bats tests/access.bats
 
   render:
     name: generated configuration

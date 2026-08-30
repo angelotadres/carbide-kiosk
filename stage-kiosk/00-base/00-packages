@@ -55,3 +55,12 @@ e2fsprogs
 initramfs-tools
 rsync
 ca-certificates
+
+# The read-only root. raspi-config's enable_overlayfs is a thin wrapper over
+# overlayroot and installs it from the network at the moment it is asked to -
+# which is first boot, on a machine whose network may not be up yet. When that
+# apt fails raspi-config still exits 0, so the machine writes overlayroot=tmpfs
+# to its kernel command line with nothing installed to act on it and comes up
+# writable. Baked in here so first boot needs no network at all.
+overlayroot
+cryptsetup

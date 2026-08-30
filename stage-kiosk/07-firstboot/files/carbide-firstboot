@@ -193,6 +193,30 @@ overlay_initramfs() {
   [ -n "$name" ] && [ -f "$bootdir/$name" ] && printf '%s\n' "$name"
 }
 
+# Whether the overlay machinery is actually installed. raspi-config's
+# enable_overlayfs is a wrapper over the overlayroot package and installs it
+# from the network at the moment it is asked to. On a first boot with no
+# network that apt fails, raspi-config exits 0 regardless, and the machine
+# comes up writable with overlayroot=tmpfs on its kernel command line and
+# nothing installed to act on it - which is what happened on 2026-08-30 and
+# was reported as success. Both packages are baked into the image now, so this
+# is a guard against a build that lost them, not a routine failure path.
+overlay_packages_installed() {
+  local pkg
+  for pkg in overlayroot cryptsetup; do
+    [ "$(dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null)" = "install ok installed" ] \
+      || return 1
+  done
+}
+
+# Whether an initramfs actually carries the overlay hook. Separate from the
+# caller so tests can point it at a fixture: every image ships an initramfs,
+# so testing that a file exists passes on the one the build wrote and says
+# nothing about whether the overlay is inside it.
+overlay_hook_present() {
+  lsinitramfs "$1" 2>/dev/null | grep -q overlayroot
+}
+
 enable_readonly_root() {
   local cmdline=/boot/firmware/cmdline.txt
   step 3 "Making the system read-only"
@@ -204,22 +228,37 @@ enable_readonly_root() {
   logged raspi-config nonint enable_bootro \
     || kiosk_die "could not mark the boot partition read-only"
 
-  # raspi-config builds the overlay initramfs and adds overlayroot=tmpfs to
-  # the kernel command line. Whether it also names the initramfs in config.txt
-  # depends on the base image; this one relies on auto_initramfs=1 instead.
-  logged raspi-config nonint enable_overlayfs || kiosk_die "could not enable overlayfs"
-  snapshot "after enabling overlayfs"
-
-  # Checking cmdline alone is not enough, and getting that wrong produced a
-  # machine that would not boot at all: the kernel told to mount an overlay
-  # root by machinery that was never installed hangs before anything can
-  # report it. Both halves have to be there - the parameter and an initramfs
-  # the firmware will really load.
   local initrd ok=yes
 
-  grep -q 'overlayroot=tmpfs' "$cmdline" 2>/dev/null || ok=no
-  initrd="$(overlay_initramfs)"
-  [ -n "$initrd" ] || ok=no
+  if ! overlay_packages_installed; then
+    # Nothing to be gained by asking raspi-config: it would fetch them, fail
+    # without a network, and report success.
+    kiosk_log "overlayroot or cryptsetup is not installed; not attempting the overlay"
+    ok=no
+  else
+    # raspi-config builds the overlay initramfs and adds overlayroot=tmpfs to
+    # the kernel command line. Whether it also names the initramfs in
+    # config.txt depends on the base image; this one relies on
+    # auto_initramfs=1 instead.
+    logged raspi-config nonint enable_overlayfs || kiosk_die "could not enable overlayfs"
+    snapshot "after enabling overlayfs"
+
+    # Checking cmdline alone is not enough, and getting that wrong produced a
+    # machine that would not boot at all: the kernel told to mount an overlay
+    # root by machinery that was never installed hangs before anything can
+    # report it. All three halves have to be there - the parameter, an
+    # initramfs the firmware will really load, and the overlay hook inside
+    # that initramfs. The third is the one that was missing: every image
+    # ships an initramfs, so testing only that a file exists passes on the
+    # one the build wrote and proves nothing about the overlay.
+    grep -q 'overlayroot=tmpfs' "$cmdline" 2>/dev/null || ok=no
+    initrd="$(overlay_initramfs)"
+    [ -n "$initrd" ] || ok=no
+    if [ -n "$initrd" ] && ! overlay_hook_present "/boot/firmware/$initrd"; then
+      kiosk_log "initramfs '$initrd' carries no overlayroot hook"
+      ok=no
+    fi
+  fi
 
   if [ "$ok" != "yes" ]; then
     # Leave the machine bootable. A writable root is a compromise; a machine
