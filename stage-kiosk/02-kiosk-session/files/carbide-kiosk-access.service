@@ -27,7 +27,14 @@ ExecStart=/usr/local/sbin/carbide-kiosk-access
 # Bounded, so a stalled step cannot hold the boot. Failure is deliberately
 # not masked: SuccessExitStatus=0 1 once made an exit that never opened the
 # port look like a success, which is the one outcome nobody could see.
-TimeoutStartSec=90
+#
+# This has to exceed what every bounded step in the script can spend between
+# them, or the unit is killed part way through and the steps below the hang
+# never run - which is how a wifi-only machine came up with no network at all.
+# tests/units.bats adds the script's own timeouts up and fails if they no
+# longer fit. Nothing here waits this long in practice: a healthy boot spends
+# a few seconds, and the ceiling only matters when something is already wrong.
+TimeoutStartSec=240
 StandardOutput=journal+console
 StandardError=journal+console
 

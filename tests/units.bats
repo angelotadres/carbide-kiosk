@@ -62,6 +62,20 @@ code() { grep -v '^[[:space:]]*#' "$1"; }
   code "$SBIN/carbide-kiosk-config" | grep -q 'disable --now ssh'
 }
 
+@test "the unit budget fits everything the script can spend" {
+  # The per-step timeouts are what stop one call hanging the boot. The unit
+  # budget is what stops the collection of them being killed part way
+  # through - and a step that never runs is indistinguishable from a step
+  # that failed, except that nothing says so. 185s of ceilings under a 90s
+  # budget is what left a wifi-only machine with no network at all.
+  local spent budget
+  spent=$(grep -oE 'timeout [0-9]+' "$SBIN/carbide-kiosk-access" \
+    | awk '{s+=$2} END {print s+0}')
+  budget=$(grep -oE '^TimeoutStartSec=[0-9]+' \
+    "$UNITS/carbide-kiosk-access.service" | cut -d= -f2)
+  [ "$budget" -ge "$spent" ]
+}
+
 @test "a missing working directory does not stop the session" {
   # Without the leading '-' systemd refuses to start the unit at all, which
   # made a configuration failure take the application down - the exact thing

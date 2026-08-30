@@ -188,6 +188,27 @@ join_network() {
   } > "$conn"
   chmod 600 "$conn"
   timeout 20 nmcli connection reload || say "NetworkManager reload failed"
+
+  # `reload` only re-reads the profile from disk. Whether autoconnect then
+  # picks it up, and how long association and DHCP take, is nobody's promise -
+  # so the first flash logged "no address yet" and left the operator with no
+  # idea where the machine was. Asking for the connection explicitly is
+  # deterministic and blocks until the link is actually up, which is the one
+  # wait in this script worth having.
+  timeout 45 nmcli connection up carbide-kiosk >/dev/null 2>&1 \
+    || say "could not bring up the wifi connection"
+}
+
+# The address, once there is one. Only ever waits when there is nothing yet,
+# so a machine that is already up pays nothing for this.
+wait_for_address() {
+  local left="${1:-10}"
+  while [ "$left" -gt 0 ]; do
+    [ -n "$(hostname -I 2>/dev/null | awk '{print $1}')" ] && return 0
+    sleep 1
+    left=$((left - 1))
+  done
+  return 1
 }
 
 main() {
@@ -262,6 +283,7 @@ main() {
   # Written where it can be read from another computer. The address is the
   # single most useful fact on a machine nobody can find, and the journal that
   # would otherwise hold it is exactly what cannot be reached.
+  wait_for_address 10 || true
   addr="$(hostname -I 2>/dev/null | awk '{print $1}')"
   if [ -n "$addr" ]; then
     say "access is up at $addr as user kiosk"
