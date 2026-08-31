@@ -28,6 +28,17 @@ exit 0
 STUB
     chmod 755 "$STUBS/$tool"
   done
+  # hostname -I has to answer, or wait_for_address spends its whole budget
+  # sleeping in every test that reaches it. 192.0.2.0/24 is the documentation
+  # range, so it can never collide with a real one.
+  cat > "$STUBS/hostname" <<STUB
+#!/bin/sh
+printf 'hostname %s\n' "\$*" >> "$BATS_TEST_TMPDIR/calls"
+[ "\$1" = "-I" ] && printf '192.0.2.10 \n'
+exit 0
+STUB
+  chmod 755 "$STUBS/hostname"
+
   # `timeout` is coreutils - always there on the Debian image, absent on
   # macOS, and commit 834de84 runs these suites on both. Unstubbed, every
   # call the script bounds would simply not run here. Drops the duration and
@@ -232,7 +243,9 @@ called() { grep -q "$1" "$BATS_TEST_TMPDIR/calls" 2>/dev/null; }
 @test "the final address is recorded where it can be read without ssh" {
   printf 'enable_ssh=1\nssh_authorized_key=ssh-ed25519 AAAAKEY t@t\n' > "$CARBIDE_BOOT_DIR/kiosk.conf"
   run main
-  grep -q "access is up" "$LOG"
+  # The address itself, not just that something was said. A log reading
+  # "no address yet" is the failure this line exists to catch.
+  grep -q "access is up at 192.0.2.10" "$LOG"
 }
 
 # --- the config reader must match common.sh ------------------------------

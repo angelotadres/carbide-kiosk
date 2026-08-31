@@ -73,8 +73,16 @@ STUB
 }
 
 @test "no dpkg-query at all is refused rather than assumed" {
+  # PATH is stripped to the stub directory, which has no dpkg-query in it.
+  # Deleting the stub alone is not enough: a machine with a real dpkg-query -
+  # any Debian or Ubuntu CI runner - would fall through to its own package
+  # database and answer from that, so the test would pass or fail on what the
+  # runner happens to have installed rather than on this code.
+  local saved="$PATH"
   rm -f "$STUBS/dpkg-query"
+  PATH="$STUBS"
   run overlay_packages_installed
+  PATH="$saved"
   [ "$status" -ne 0 ]
 }
 

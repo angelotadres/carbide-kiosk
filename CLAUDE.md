@@ -47,11 +47,11 @@ Runtime settings live in `kiosk.conf` on the boot partition and are regenerated 
 
 Every fix leaves a test behind. The suites run the scripts against stubs rather than grepping them, and they run on macOS as well as Linux, so anything the script shells out to needs a stub — including `timeout`, which macOS does not have.
 
-Run what CI runs before saying something passes:
+Run what CI runs, in the environment CI runs it in, before saying something passes. CI is `ubuntu-latest` with bats and shellcheck from apt — a suite that passes under a newer bats on macOS can still fail there, and a test that stubs a system tool can pass on a host that lacks the real one and fail on a runner that has it:
 
 ```bash
-npx --yes bats@1.11.0 tests/*.bats
-docker run --rm -v "$PWD:/work" -w /work debian:bookworm bash -c 'apt-get update -qq && apt-get install -y -qq shellcheck && shellcheck -x -e SC1091,SC2154 $(find . -path ./pi-gen -prune -o -type f \( -name "*.sh" -o -name "carbide-*" \) -print | grep -vE "\.service$|\.conf$")'
+docker run --rm -v "$PWD:/work" -w /work ubuntu:latest bash -c \
+  'apt-get update -qq && apt-get install -y -qq bats shellcheck && bats tests/*.bats'
 ```
 
-Install nothing globally to do it. The pre-commit hook falls back to Docker for both tools, and so should you.
+Run it on macOS too, since the suites are meant to pass on both, but treat the Ubuntu run as the one that decides. Install nothing globally either way; the pre-commit hook falls back to Docker for both tools, and so should you.
