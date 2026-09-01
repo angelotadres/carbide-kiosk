@@ -88,7 +88,9 @@ A clean flash of `1.0.0-alpha.23` on 2026-09-01 is the first to come up with rem
 
 What that run disproved is the two-minute wait the test plan asked for. NetworkManager activated the WiFi profile fifteen seconds into the second boot and the machine held its address from that moment, but the Mac watching for it could not reach the address for a further seven minutes, because probing it while the Pi was still rebooting left a negative ARP entry on the client that outlived the reboot. The machine was healthy for the whole of that window and said so on its own console. An operator following the old timing would have declared a working image dead, which is the failure the plan exists to prevent, so the wait is now eight minutes and the symptom is named alongside it.
 
-Three things on that machine remain unproven. Carbide Motion reports `Not Connected` with no configuration found for the attached machine, so USB detection of the Shapeoko has not been exercised on this image. The autologin console on Ctrl+Alt+F2 has not been tried. The power-cut resilience run has not been done.
+The application half of that machine was exercised on the same day and works. The Shapeoko is detected: it enumerates as `16d0:0fa7`, the generated udev rule symlinks it to `/dev/shapeoko`, and the status file reports `Cutter: connected (/dev/ttyACM0)`. Carbide Motion's own setup was completed and the machine jogs. A file written to the share from macOS arrives as `cnc:cncshare` under a setgid share directory and is readable by the `kiosk` account the session runs as, which is the case that failed on 2026-08-26, and it reads back byte-identical.
+
+Two things on that machine remain unproven. The autologin console on Ctrl+Alt+F2 has not been tried. The power-cut resilience run has not been done, and until it passes the architecture's central claim is untested.
 
 The one capability that is not available: no keyboard can appear when a text field is focused. That needs the application to publish focus over accessibility, and Carbide Motion does not. The keyboard is summoned by hand instead.
 
@@ -232,8 +234,9 @@ carbide-kiosk/
 
 ### Not yet verified
 
-- [ ] Confirm the access unit opens port 22 before first-boot setup, so a boot that fails anywhere else is still reachable. This is the guarantee everything else is diagnosed through, and it has never held on hardware. It failed again on 2026-08-30, to the `systemctl --now` deadlock described above. Confirm it specifically on a card with no `kiosk.conf` and only an `authorized_keys` file, which is the case that used to lock the machine out silently.
-- [ ] Confirm the overlay engages, so the root is read-only and the machine tolerates losing power. It did not on 2026-08-30, and reported success; confirm by checking that `/` is an overlay mount on a booted machine, not by trusting the first-boot log.
+- [x] Confirm the access unit opens port 22 before first-boot setup, so a boot that fails anywhere else is still reachable. Held on 2026-09-01, eleven seconds into the first boot and fifteen into the second.
+- [ ] Confirm the same on a card with no `kiosk.conf` and only an `authorized_keys` file, which is the case that used to lock the machine out silently. The 2026-09-01 run could not cover it: the rig has no Ethernet, so a card with no `kiosk.conf` has no network to be reachable over.
+- [x] Confirm the overlay engages, so the root is read-only and the machine tolerates losing power. Confirmed on 2026-09-01 on the booted machine rather than from the log: `/` is an overlay over `/media/root-ro` and `/boot/firmware` is mounted `ro`. That the machine then tolerates losing power is a separate test, still outstanding.
 - [ ] Confirm `agetty --autologin` accepts an account whose password field is `*`, so the physical console actually works
 
 ### Hardware confirmation
