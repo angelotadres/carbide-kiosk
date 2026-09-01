@@ -1,0 +1,22 @@
+[Unit]
+Description=Carbide Motion Kiosk data partition
+Documentation=https://github.com/angelotadres/carbide-kiosk
+# Deliberately a unit rather than an /etc/fstab entry, and that is the whole
+# point of this file. overlayroot rewrites every ext4 line in fstab into a
+# read-only mount under /media/root-ro with a tmpfs upper layer on top. That
+# is right for the root filesystem and precisely wrong for this partition,
+# whose only job is to survive a reboot: the 2026-09-01 image shipped the
+# fstab form and put the entire share in RAM, silently, with the 230 GB
+# partition mounted read-only and receiving nothing.
+#
+# overlayroot only ever rewrites /etc/fstab, so a mount unit is out of its
+# reach by construction rather than by agreement.
+
+[Mount]
+What=/dev/disk/by-label/CARBIDEDATA
+Where=/data
+Type=ext4
+Options=defaults,noatime,commit=1,errors=remount-ro
+
+[Install]
+WantedBy=local-fs.target

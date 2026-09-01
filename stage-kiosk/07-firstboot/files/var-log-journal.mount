@@ -1,0 +1,18 @@
+[Unit]
+Description=Persistent journal on the Carbide Motion Kiosk data partition
+Documentation=https://github.com/angelotadres/carbide-kiosk
+# Same reasoning as data.mount: a bind in fstab is rewritten into an overlay
+# with a tmpfs upper, and the journal goes back to being volatile. It has to
+# be persistent because carbide-kiosk-status reports errors from the previous
+# boot, which is the one boot nobody can still read from memory.
+RequiresMountsFor=/data
+Before=systemd-journal-flush.service
+
+[Mount]
+What=/data/log/journal
+Where=/var/log/journal
+Type=none
+Options=bind
+
+[Install]
+WantedBy=local-fs.target

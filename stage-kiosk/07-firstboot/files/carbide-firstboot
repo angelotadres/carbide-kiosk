@@ -145,21 +145,36 @@ create_data_partition() {
   kiosk_log "created data partition $part (${size_mb} MiB, starting at ${start_mb} MiB)"
 }
 
+# Nothing here goes into /etc/fstab, and that is deliberate. overlayroot
+# rewrites every ext4 entry in fstab into a read-only mount under
+# /media/root-ro with a tmpfs upper layer, which is right for the root
+# filesystem and exactly wrong for the partition the share lives on. The
+# 2026-09-01 image wrote these two lines to fstab and came up with the whole
+# share in RAM: files vanished on reboot, the share advertised 3.9 GB of
+# memory instead of 230 GB of card, and the 230 GB partition sat read-only
+# receiving nothing. data.mount and var-log-journal.mount say the same thing
+# somewhere overlayroot does not rewrite.
 mount_data_partition() {
   install -d -m 755 "$KIOSK_DATA"
-  grep -q "$DATA_LABEL" /etc/fstab || printf \
-    'LABEL=%s\t%s\text4\tdefaults,noatime,commit=1,errors=remount-ro\t0\t2\n' \
-    "$DATA_LABEL" "$KIOSK_DATA" >> /etc/fstab
-  logged mount "$KIOSK_DATA" || kiosk_die "could not mount $KIOSK_DATA"
+  logged mount -t ext4 -o defaults,noatime,commit=1,errors=remount-ro \
+    "LABEL=$DATA_LABEL" "$KIOSK_DATA" \
+    || kiosk_die "could not mount $KIOSK_DATA"
 
   install -d -m 2755 -o root -g systemd-journal "$KIOSK_DATA/log/journal"
-  grep -q '/var/log/journal' /etc/fstab || printf \
-    '%s/log/journal\t/var/log/journal\tnone\tbind\t0\t0\n' "$KIOSK_DATA" >> /etc/fstab
-  mount /var/log/journal || kiosk_log "could not bind the journal directory"
+  logged mount --bind "$KIOSK_DATA/log/journal" /var/log/journal \
+    || kiosk_log "could not bind the journal directory"
   install -d -m 755 "$KIOSK_DATA/kiosk/config" "$KIOSK_DATA/kiosk/share"
   chown -R kiosk:kiosk "$KIOSK_DATA/kiosk"
-  install -d -m 2755 -o root -g systemd-journal "$KIOSK_DATA/log/journal"
   install -d -m 700 "$KIOSK_DATA/ssh"
+
+  # Enabled here rather than in the image, because until this function ran
+  # there was no partition to mount: both units would have waited on a device
+  # that does not exist, and a mount unit that times out takes local-fs.target
+  # down with it on the one boot that must not fail. Never --now - this is a
+  # unit systemd is still starting, for the reason carbide-kiosk-access
+  # documents at length.
+  logged systemctl enable data.mount var-log-journal.mount \
+    || kiosk_log "could not enable the data mount units"
 }
 
 # Which initramfs the firmware will actually load, printed if one will be.

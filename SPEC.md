@@ -49,7 +49,7 @@ The image ships two partitions; the third is created by the first-boot unit from
 
 - `/boot/firmware` — FAT32, holds `kiosk.conf`. Mounted read-only after first boot.
 - `/` — ext4, read-only, overlayfs with a tmpfs upper layer.
-- `/data` — ext4, label `CARBIDEDATA`, the only writable persistent storage.
+- `/data` — ext4, label `CARBIDEDATA`, the only writable persistent storage. Mounted by `data.mount` rather than from `/etc/fstab`, because `overlayroot` rewrites every ext4 entry in `fstab` into a read-only mount under `/media/root-ro` with a tmpfs upper layer. That is right for the root filesystem and exactly wrong here, and it only rewrites `fstab`, so a mount unit is out of its reach by construction. The persistent journal is bound onto the partition the same way, by `var-log-journal.mount`.
 
 ### Boot flow
 
@@ -89,6 +89,10 @@ A clean flash of `1.0.0-alpha.23` on 2026-09-01 is the first to come up with rem
 What that run disproved is the two-minute wait the test plan asked for. NetworkManager activated the WiFi profile fifteen seconds into the second boot and the machine held its address from that moment, but the Mac watching for it could not reach the address for a further seven minutes, because probing it while the Pi was still rebooting left a negative ARP entry on the client that outlived the reboot. The machine was healthy for the whole of that window and said so on its own console. An operator following the old timing would have declared a working image dead, which is the failure the plan exists to prevent, so the wait is now eight minutes and the symptom is named alongside it.
 
 The application half of that machine was exercised on the same day and works. The Shapeoko is detected: it enumerates as `16d0:0fa7`, the generated udev rule symlinks it to `/dev/shapeoko`, and the status file reports `Cutter: connected (/dev/ttyACM0)`. Carbide Motion's own setup was completed and the machine jogs. A file written to the share from macOS arrives as `cnc:cncshare` under a setgid share directory and is readable by the `kiosk` account the session runs as, which is the case that failed on 2026-08-26, and it reads back byte-identical.
+
+That run also found the image's most serious defect to date, and found it by accident: Finder reported 4.15 GB free on a 230 GB share. `carbide-firstboot` wrote the data partition into `/etc/fstab`, and `overlayroot` rewrites every ext4 entry there into a read-only mount under `/media/root-ro` with a tmpfs upper layer. The share therefore ran entirely in RAM. Files written to it did not survive a reboot, the 230 GB partition was mounted read-only and received nothing, Carbide Motion's settings could not persist, and the journal was volatile again. The rewrite happens in the initramfs on every boot, so reordering the `fstab` writes would not have helped; both mounts are systemd units now, which `overlayroot` never touches.
+
+The failure was invisible from inside the machine and would have stayed that way. A power-cut test against this image would have passed, because nothing persisted and so nothing could be corrupted - proof of exactly the property that did not hold.
 
 Two things on that machine remain unproven. The autologin console on Ctrl+Alt+F2 has not been tried. The power-cut resilience run has not been done, and until it passes the architecture's central claim is untested.
 
@@ -238,6 +242,7 @@ carbide-kiosk/
 - [ ] Confirm the same on a card with no `kiosk.conf` and only an `authorized_keys` file, which is the case that used to lock the machine out silently. The 2026-09-01 run could not cover it: the rig has no Ethernet, so a card with no `kiosk.conf` has no network to be reachable over.
 - [x] Confirm the overlay engages, so the root is read-only and the machine tolerates losing power. Confirmed on 2026-09-01 on the booted machine rather than from the log: `/` is an overlay over `/media/root-ro` and `/boot/firmware` is mounted `ro`. That the machine then tolerates losing power is a separate test, still outstanding.
 - [ ] Confirm `agetty --autologin` accepts an account whose password field is `*`, so the physical console actually works
+- [ ] Confirm `/data` is a plain read-write mount of `LABEL=CARBIDEDATA` on the second boot and every boot after, not an overlay with a tmpfs upper. Check `df /data` reports the size of the card rather than the size of RAM, and that a file written to the share is still there after a reboot. This is what 1.0.0-alpha.23 got wrong, and the symptom is silent from inside the machine.
 
 ### Hardware confirmation
 
