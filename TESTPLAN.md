@@ -10,11 +10,14 @@ You need a Pi 5, an SD card of 8 GB or more, and a display of at least 1280x1024
 
 ## 0. Prove the way in, before anything else
 
-Do this first and on its own, because every other step in this plan is diagnosed through it. It is also the step that has silently failed on every attempt so far, and the fix for that is unproven on hardware.
+Do this first and on its own, because every other step in this plan is diagnosed through it. It failed silently on every attempt before `1.0.0-alpha.23`, which is the first image to pass it.
 
-Flash `image_2026-08-29-carbide-kiosk.img.xz` with Raspberry Pi Imager, declining its customisation settings. Re-insert the card and put **only** a file named `authorized_keys` on the small partition, holding one public key line — no `kiosk.conf` at all. Connect Ethernet rather than WiFi: wired DHCP needs no configuration, so it cannot be broken by a config file that is not there.
+Flash the image from the release with Raspberry Pi Imager, declining its customisation settings. Re-insert the card and put **only** a file named `authorized_keys` on the small partition, holding one public key line — no `kiosk.conf` at all. Connect Ethernet rather than WiFi: wired DHCP needs no configuration, so it cannot be broken by a config file that is not there.
 
-Power on and wait two minutes.
+> [!WARNING]
+> A rig with no Ethernet cannot run this step as written. With no `kiosk.conf` there is no WiFi configuration, `join_network` logs `no wifi_ssid set; relying on a wired connection` and returns, and the machine has no network to be reachable over. On such a rig skip to step 1 and put a complete `kiosk.conf` on the card from the start, with `enable_ssh=1` in it.
+
+Power on and wait eight minutes. Two is not enough: the machine can hold its address within twenty seconds and still not answer for several minutes afterwards, because probing the address while it is rebooting leaves a negative ARP entry on the watching computer that outlives the reboot. Ping the address rather than retrying `ssh`, which is rate limited to six new connections a minute.
 
 **Pass:** `ssh kiosk@<address>` logs in. The screen and `first-boot.log` on the small partition both say `access is up at <address>`.
 
@@ -24,7 +27,7 @@ Power down and take the card out before continuing.
 
 ## 1. Flash and configure
 
-Flash `image_2026-08-29-carbide-kiosk.img.xz` with Raspberry Pi Imager. When it offers to apply customisation settings, decline. Those settings write their own first-boot configuration and will collide with this image's.
+Flash the image from the [latest release](https://github.com/angelotadres/carbide-kiosk/releases) with Raspberry Pi Imager. When it offers to apply customisation settings, decline. Those settings write their own first-boot configuration and will collide with this image's.
 
 Re-insert the card. One small partition mounts on your machine; the large one will not, and that is expected. Copy `kiosk.conf.example` to `kiosk.conf` on the partition that mounted, and set at minimum:
 
