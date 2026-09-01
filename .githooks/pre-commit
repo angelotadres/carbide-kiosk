@@ -12,16 +12,14 @@ cd "$REPO_ROOT"
 ran=0
 failed=0
 
-# The unit and overlay suites guard the two things that leave no way in when
-# they regress: a visible access failure, and a session that still starts.
-SUITES=(
-  tests/select_build.bats
-  tests/kiosk_conf.bats
-  tests/overlay_initramfs.bats
-  tests/overlay_guard.bats
-  tests/units.bats
-  tests/access.bats
-)
+# Every suite, found rather than listed. A hand-maintained list silently stops
+# covering things: it had drifted three suites behind tests/ - including the
+# one guarding the data partition against the overlay - and each was
+# unenforced here while CI, which globs, ran them all. A glob cannot drift.
+SUITES=()
+while IFS= read -r suite; do
+  SUITES+=("$suite")
+done < <(find tests -maxdepth 1 -name '*.bats' | sort)
 
 scripts() {
   find . -path ./pi-gen -prune -o -type f \
