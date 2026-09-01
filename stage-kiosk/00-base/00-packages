@@ -64,3 +64,10 @@ ca-certificates
 # writable. Baked in here so first boot needs no network at all.
 overlayroot
 cryptsetup
+
+# The access script unblocks the radio and applies the regulatory domain
+# itself, because do_wifi_country only writes cmdline.txt and the kernel reads
+# that at the next boot. Both arrive today as somebody else's dependency;
+# named here so the way in never rests on that staying true.
+rfkill
+iw

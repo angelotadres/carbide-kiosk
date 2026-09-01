@@ -34,7 +34,7 @@ ExecStart=/usr/local/sbin/carbide-kiosk-access
 # tests/units.bats adds the script's own timeouts up and fails if they no
 # longer fit. Nothing here waits this long in practice: a healthy boot spends
 # a few seconds, and the ceiling only matters when something is already wrong.
-TimeoutStartSec=240
+TimeoutStartSec=300
 StandardOutput=journal+console
 StandardError=journal+console
 

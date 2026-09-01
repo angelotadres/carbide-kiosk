@@ -33,6 +33,11 @@ install -d -m 755 "${ROOTFS_DIR}/etc/systemd/system/getty@tty2.service.d"
 install -m 644 files/getty-autologin.conf \
 	"${ROOTFS_DIR}/etc/systemd/system/getty@tty2.service.d/autologin.conf"
 
+# The power button, made explicit rather than inherited. See the file itself.
+install -d -m 755 "${ROOTFS_DIR}/etc/systemd/logind.conf.d"
+install -m 644 files/logind/carbide-power.conf \
+	"${ROOTFS_DIR}/etc/systemd/logind.conf.d/carbide-power.conf"
+
 # xinit from a systemd service is not a console login, so Xorg needs telling.
 install -d -m 755 "${ROOTFS_DIR}/etc/X11"
 cat > "${ROOTFS_DIR}/etc/X11/Xwrapper.config" << 'XWRAP'

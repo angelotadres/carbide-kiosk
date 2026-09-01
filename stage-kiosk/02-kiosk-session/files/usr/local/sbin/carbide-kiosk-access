@@ -40,16 +40,46 @@ HOSTKEY="$ETC/ssh/ssh_host_ed25519_key"
 
 # Said out loud, in all three places, because any one of them can be the only
 # one a person can reach.
+# The boot partition is mounted read-only from the second boot onward, and a
+# plain append to it is discarded without complaint. That silence cost a whole
+# session: the first boot was diagnosable and every boot after it - which is
+# every boot a machine in service ever has - left no record at all. The cheap
+# append is tried first, so a writable partition costs nothing extra.
+BOOT_RW=0
+boot_log() {
+  local line="$1"
+  { printf '%s\n' "$line" >> "$BOOT/first-boot.log"; } 2>/dev/null && return 0
+  # Remount once for the life of the script, not once per line. Per-line would
+  # put two mount ceilings behind every message and blow the unit budget on a
+  # boot that is already going badly - which is the only boot that logs much.
+  if [ "$BOOT_RW" = 0 ]; then
+    timeout 5 mount -o remount,rw "$BOOT" 2>/dev/null || { BOOT_RW=2; return 0; }
+    BOOT_RW=1
+  fi
+  [ "$BOOT_RW" = 1 ] || return 0
+  { printf '%s\n' "$line" >> "$BOOT/first-boot.log"; } 2>/dev/null || true
+}
+
+# Put the partition back as it was found. Read-only is what makes it safe to
+# cut power, and leaving it writable to save a few lines of log would trade
+# the guarantee for the diagnostic.
+boot_log_close() {
+  [ "$BOOT_RW" = 1 ] || return 0
+  sync 2>/dev/null || true
+  timeout 5 mount -o remount,ro "$BOOT" 2>/dev/null || true
+  BOOT_RW=0
+}
+
 say() {
   printf 'carbide-kiosk-access: %s\n' "$*" >&2
   { printf '  ... %s\n' "$*" > /dev/tty1; } 2>/dev/null || true
-  { printf '%s %s\n' "$(date '+%H:%M:%S')" "$*" >> "$BOOT/first-boot.log"; } 2>/dev/null || true
+  boot_log "$(date '+%H:%M:%S') $*"
 }
 
 alert() {
   printf 'carbide-kiosk-access: %s\n' "$*" >&2
   { printf '  !!! %s\n' "$*" > /dev/tty1; } 2>/dev/null || true
-  { printf '%s !!! %s\n' "$(date '+%H:%M:%S')" "$*" >> "$BOOT/first-boot.log"; } 2>/dev/null || true
+  boot_log "$(date '+%H:%M:%S') !!! $*"
 }
 
 # Deliberately not sourced from common.sh. Reading one key out of a config
@@ -167,6 +197,23 @@ open_port_22() {
 # worth having: a machine with a cable is reachable whatever kiosk.conf says,
 # including when there is no kiosk.conf. Wifi is attempted only if an SSID is
 # configured, and only after the port is already open.
+# Whether NetworkManager has a wifi device it will actually accept a
+# connection on. "unavailable" means the radio is off, blocked, or the driver
+# has not finished coming up; anything else is usable.
+wifi_device_ready() {
+  local deadline=$(( SECONDS + ${1:-30} )) state
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    state="$(timeout 5 nmcli -t -f TYPE,STATE device 2>/dev/null \
+      | awk -F: '$1 == "wifi" { print $2; exit }')"
+    case "$state" in
+      ''|unavailable|unmanaged) ;;
+      *) return 0 ;;
+    esac
+    sleep 2
+  done
+  return 1
+}
+
 join_network() {
   local ssid psk country conn="$ETC/NetworkManager/system-connections/carbide-kiosk.nmconnection"
   ssid="$(conf_get wifi_ssid)"
@@ -174,8 +221,16 @@ join_network() {
   psk="$(conf_get wifi_password)"
   country="$(conf_get wifi_country US)"
 
+  # do_wifi_country writes cfg80211.ieee80211_regdom to cmdline.txt, which the
+  # kernel only reads at the *next* boot. On this one the radio can still be
+  # rfkill-blocked with no regulatory domain set, and nmcli then refuses in
+  # under a second - which is exactly what the 2026-08-31 flash recorded. So
+  # set it for next time, and also unblock and apply it right now.
   timeout 30 raspi-config nonint do_wifi_country "$country" \
     || say "could not set the wifi country; carrying on"
+  timeout 10 rfkill unblock wifi 2>/dev/null || true
+  timeout 10 iw reg set "$country" 2>/dev/null || true
+  timeout 10 nmcli radio wifi on 2>/dev/null || true
 
   install -d -m 700 "$ETC/NetworkManager/system-connections"
   {
@@ -195,8 +250,23 @@ join_network() {
   # idea where the machine was. Asking for the connection explicitly is
   # deterministic and blocks until the link is actually up, which is the one
   # wait in this script worth having.
-  timeout 45 nmcli connection up carbide-kiosk >/dev/null 2>&1 \
-    || say "could not bring up the wifi connection"
+  # The radio comes up on its own schedule and this script runs about thirty
+  # seconds into boot, well ahead of it. A device in state "unavailable" is
+  # one nmcli will refuse to use, so wait for it to leave that state rather
+  # than asking too early and calling the refusal a wifi failure.
+  if ! wifi_device_ready 20; then
+    say "no wifi device became ready; not attempting to join"
+    return 0
+  fi
+
+  # nmcli's own words. Throwing them away left "could not bring up the wifi
+  # connection" as the entire diagnosis, on the one partition anyone can read,
+  # for a machine with no other way in.
+  local err
+  if ! err="$(timeout 45 nmcli connection up carbide-kiosk 2>&1)"; then
+    say "could not bring up the wifi connection"
+    say "  nmcli: $(printf '%s' "$err" | tr '\n' ' ' | cut -c1-200)"
+  fi
 }
 
 # The address, once there is one. Only ever waits when there is nothing yet,
@@ -293,5 +363,9 @@ main() {
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  # Installed here rather than at file scope: an EXIT trap set while being
+  # sourced belongs to whoever sourced us, and silently replaces theirs. The
+  # test harness lost a result to exactly that.
+  trap boot_log_close EXIT
   main "$@"
 fi

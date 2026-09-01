@@ -20,7 +20,11 @@ setup() {
   # a test can assert on what the script tried to do to the machine.
   STUBS="$BATS_TEST_TMPDIR/bin"
   mkdir -p "$STUBS"
-  for tool in systemctl nft ssh-keygen chpasswd nmcli raspi-config hostname chown; do
+  # Everything the script shells out to. `mount` is stubbed above all:
+  # boot_log remounts the boot partition, and a test must never be one
+  # unstubbed binary away from remounting something on the host.
+  for tool in systemctl nft ssh-keygen chpasswd nmcli raspi-config hostname \
+              chown rfkill iw mount sync; do
     cat > "$STUBS/$tool" <<STUB
 #!/bin/sh
 printf '%s %s\n' "$tool" "\$*" >> "$BATS_TEST_TMPDIR/calls"
@@ -231,6 +235,74 @@ called() { grep -q "$1" "$BATS_TEST_TMPDIR/calls" 2>/dev/null; }
   grep -q 'timeout [0-9]* ssh-keygen' "$SCRIPT"
   grep -q 'timeout [0-9]* nft -f' "$SCRIPT"
   grep -q 'timeout [0-9]* systemctl' "$SCRIPT"
+}
+
+# --- what the 2026-08-31 flash could not tell us -------------------------
+
+@test "nmcli's own error reaches the log, not just our summary" {
+  # The card said only "could not bring up the wifi connection". nmcli knew
+  # why and the script discarded it, on the one partition anyone can read,
+  # for a machine with no other way in.
+  cat > "$STUBS/nmcli" <<'STUB'
+#!/bin/sh
+case "$*" in
+  *"connection up"*) echo "Error: Connection activation failed: no suitable device found" >&2; exit 4 ;;
+  *"-t -f TYPE,STATE device"*) echo "wifi:disconnected" ;;
+esac
+exit 0
+STUB
+  chmod 755 "$STUBS/nmcli"
+  printf 'enable_ssh=1\nssh_authorized_key=ssh-ed25519 AAAAKEY t@t\nwifi_ssid=workshop\nwifi_password=secret\n' \
+    > "$CARBIDE_BOOT_DIR/kiosk.conf"
+  run main
+  grep -q "could not bring up the wifi connection" "$LOG"
+  grep -q "no suitable device found" "$LOG"
+}
+
+@test "a radio that never becomes ready is named rather than blamed on wifi" {
+  # An "unavailable" device is one nmcli refuses to use. Asking anyway and
+  # reporting the refusal as a wifi failure hides that the radio never woke.
+  cat > "$STUBS/nmcli" <<'STUB'
+#!/bin/sh
+case "$*" in
+  *"-t -f TYPE,STATE device"*) echo "wifi:unavailable" ;;
+  *"connection up"*) echo "SHOULD NOT BE CALLED" >&2; exit 9 ;;
+esac
+exit 0
+STUB
+  chmod 755 "$STUBS/nmcli"
+  printf 'enable_ssh=1\nssh_authorized_key=ssh-ed25519 AAAAKEY t@t\nwifi_ssid=workshop\n' \
+    > "$CARBIDE_BOOT_DIR/kiosk.conf"
+  run main
+  grep -q "no wifi device became ready" "$LOG"
+}
+
+@test "the radio is unblocked and given a regulatory domain now, not next boot" {
+  # do_wifi_country only writes cmdline.txt, which the kernel reads at the
+  # next boot. This boot needs the domain applied at runtime or the radio
+  # stays blocked and nmcli refuses in under a second.
+  printf 'enable_ssh=1\nssh_authorized_key=ssh-ed25519 AAAAKEY t@t\nwifi_ssid=workshop\nwifi_country=GB\n' \
+    > "$CARBIDE_BOOT_DIR/kiosk.conf"
+  run main
+  called "rfkill unblock wifi"
+  called "iw reg set GB"
+}
+
+@test "a read-only boot partition still gets the log" {
+  # From the second boot onward /boot/firmware is read-only and a plain
+  # append is discarded in silence, which left every in-service boot with no
+  # record at all.
+  printf 'enable_ssh=1\nssh_authorized_key=ssh-ed25519 AAAAKEY t@t\n' > "$CARBIDE_BOOT_DIR/kiosk.conf"
+  BOOT_RW=0
+  run boot_log "a line"
+  [ "$status" -eq 0 ]
+}
+
+@test "the boot partition is put back read-only when the script exits" {
+  # Leaving it writable to keep logging would trade the power-loss guarantee
+  # for the diagnostic.
+  grep -q 'trap boot_log_close EXIT' "$SCRIPT"
+  grep -q 'remount,ro' "$SCRIPT"
 }
 
 @test "a missing wifi_ssid falls back to wired rather than failing" {

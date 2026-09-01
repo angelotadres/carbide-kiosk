@@ -68,12 +68,49 @@ code() { grep -v '^[[:space:]]*#' "$1"; }
   # through - and a step that never runs is indistinguishable from a step
   # that failed, except that nothing says so. 185s of ceilings under a 90s
   # budget is what left a wifi-only machine with no network at all.
-  local spent budget
+  #
+  # Summing the `timeout` literals alone undercounts: the script also has two
+  # polling loops whose deadlines are arguments, not ceilings, and they are
+  # spent on exactly the boot that is already going wrong. They are added here
+  # so the budget covers what the script can really take.
+  local spent loops budget
   spent=$(grep -oE 'timeout [0-9]+' "$SBIN/carbide-kiosk-access" \
     | awk '{s+=$2} END {print s+0}')
+  loops=$(grep -oE '(wifi_device_ready|wait_for_address) [0-9]+' \
+    "$SBIN/carbide-kiosk-access" | awk '{s+=$2} END {print s+0}')
   budget=$(grep -oE '^TimeoutStartSec=[0-9]+' \
     "$UNITS/carbide-kiosk-access.service" | cut -d= -f2)
-  [ "$budget" -ge "$spent" ]
+  [ "$loops" -gt 0 ]
+  [ "$budget" -ge "$((spent + loops))" ]
+}
+
+# --- the only off switch the machine has --------------------------------
+#
+# No keyboard, no dependable network shell, and no shutdown control inside
+# Carbide Motion. A short press on the power button is how this machine is
+# turned off, so it may not depend on whichever default a systemd release
+# happens to ship. The alternative an operator falls back on is a five-second
+# hold, which the Pi 5 services in hardware as an abrupt cut.
+
+@test "a short press on the power button shuts the machine down" {
+  grep -q '^HandlePowerKey=poweroff' "$UNITS/logind/carbide-power.conf"
+}
+
+@test "the long press is not claimed to be handled" {
+  # The firmware cuts power at five seconds below the OS. Saying anything
+  # else here would document behaviour that cannot happen.
+  grep -q '^HandlePowerKeyLongPress=ignore' "$UNITS/logind/carbide-power.conf"
+}
+
+@test "nothing may defer the shutdown indefinitely" {
+  grep -qE '^InhibitDelayMaxSec=[0-9]+' "$UNITS/logind/carbide-power.conf"
+}
+
+@test "the power configuration is actually installed" {
+  # A file in files/ that no install line copies is invisible in the image,
+  # which is the failure mode this whole suite exists for.
+  grep -q 'logind.conf.d/carbide-power.conf' \
+    "$(dirname "$UNITS")/00-run.sh"
 }
 
 @test "a missing working directory does not stop the session" {
