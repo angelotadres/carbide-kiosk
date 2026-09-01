@@ -65,11 +65,39 @@ code() { grep -v '^[[:space:]]*#' "$1"; }
   grep -q 'files/var-log-journal.mount' "$RUN"
 }
 
-@test "neither mount unit is enabled at build time" {
-  # There is no partition until first boot creates one. An enabled mount unit
-  # waiting on a device that does not exist times out and takes
-  # local-fs.target with it, on the one boot that must not fail.
-  ! code "$RUN" | grep -E 'systemctl enable' | grep -q 'mount'
+@test "no mount unit is installed where systemd can see it" {
+  # This is the property that matters, and 1.0.0-alpha.24 tested the wrong
+  # one. It shipped data.mount into /etc/systemd/system merely *disabled*, on
+  # the theory that an unenabled unit is inert. It is not: carbide-kiosk,
+  # carbide-kiosk-config and carbide-kiosk-status all declare
+  # RequiresMountsFor=/data, which pulls in whichever mount unit covers that
+  # path with a hard Requires regardless of enablement. First boot stalled
+  # ninety seconds on a device no partition had been created for yet, then a
+  # stale filesystem got mounted under mkfs and setup died.
+  #
+  # A unit systemd cannot see cannot be required.
+  # All five directories systemd actually searches, /usr/local/lib included -
+  # that one is easy to forget and is a real unit path.
+  ! code "$RUN" | grep -E 'install .*\.mount' \
+    | grep -qE '/(etc|run|usr/lib|usr/local/lib|lib)/systemd/system'
+}
+
+@test "the mount units are staged outside every systemd search path" {
+  code "$RUN" | grep -q 'usr/local/share/carbide-kiosk'
+}
+
+@test "first boot installs the units into a systemd directory itself" {
+  code "$FIRSTBOOT" | grep -qE 'install .*data\.mount.* /etc/systemd/system'
+  code "$FIRSTBOOT" | grep -qE 'install .*var-log-journal\.mount'
+}
+
+@test "a stale filesystem is wiped before the new one is made" {
+  # Flashing rewrites only the first few GB, so a recreated partition at the
+  # same offset exposes the previous run's ext4 superblock and its label.
+  code "$FIRSTBOOT" | grep -q 'wipefs -a'
+  # ...and the wipe has to come before mkfs, or it destroys the new filesystem.
+  [ "$(code "$FIRSTBOOT" | grep -n 'wipefs -a' | cut -d: -f1)" \
+    -lt "$(code "$FIRSTBOOT" | grep -n 'mkfs.ext4' | cut -d: -f1)" ]
 }
 
 @test "first boot enables both units once the partition is real" {

@@ -15,6 +15,8 @@ CARBIDE_KIOSK_LIB="${CARBIDE_KIOSK_LIB:-/usr/local/lib/carbide-kiosk}"
 }
 
 DATA_LABEL="CARBIDEDATA"
+# Staged outside systemd's search path; see mount_data_partition for why.
+UNIT_SOURCE="${CARBIDE_UNIT_SOURCE:-/usr/local/share/carbide-kiosk}"
 
 # First boot takes minutes and the screen is otherwise blank, which invites
 # someone to switch the machine off in the middle of formatting. Everything
@@ -129,6 +131,19 @@ create_data_partition() {
   part="$(partition_device "$dev" "$number")"
   [ -b "$part" ] || kiosk_die "new partition $part did not appear"
 
+  # A reflashed card still carries the previous run's filesystem: writing an
+  # image only rewrites the first few GB, so recreating this partition at the
+  # same offset makes the old ext4 superblock - label and all - reappear under
+  # it. blkid found nothing earlier because the flash had rewritten the
+  # partition table, so the early return above did not fire.
+  #
+  # On 1.0.0-alpha.24 udev then published that label, a mount unit claimed the
+  # device, and mkfs refused with "is mounted; will not make a filesystem
+  # here", killing setup. Take the signature off before anything can act on it.
+  umount "$part" 2>/dev/null || true
+  logged wipefs -a "$part" || kiosk_log "could not wipe old signatures from $part"
+  udevadm settle
+
   # Check the partition itself, not the free space it was cut from. Reporting
   # intended size rather than actual size is what hid this bug last time.
   size_mb="$(( $(blockdev --getsize64 "$part") / 1048576 ))"
@@ -167,12 +182,22 @@ mount_data_partition() {
   chown -R kiosk:kiosk "$KIOSK_DATA/kiosk"
   install -d -m 700 "$KIOSK_DATA/ssh"
 
-  # Enabled here rather than in the image, because until this function ran
-  # there was no partition to mount: both units would have waited on a device
-  # that does not exist, and a mount unit that times out takes local-fs.target
-  # down with it on the one boot that must not fail. Never --now - this is a
-  # unit systemd is still starting, for the reason carbide-kiosk-access
-  # documents at length.
+  # Installed here, not by the image, and this is load bearing. Three units
+  # declare RequiresMountsFor=/data, and that pulls in whichever mount unit
+  # covers the path with a hard Requires whether or not it is enabled. Present
+  # from the start, data.mount therefore made every first boot wait ninety
+  # seconds on a device no partition had been created for yet - which is what
+  # 1.0.0-alpha.24 did. Staged out of systemd's search path, there is nothing
+  # to require until this line runs, and by now the partition is mounted.
+  #
+  # This runs before enable_readonly_root, so /etc is still the real
+  # filesystem and these survive the overlay.
+  install -m 644 "$UNIT_SOURCE/data.mount" /etc/systemd/system/data.mount
+  install -m 644 "$UNIT_SOURCE/var-log-journal.mount" \
+    /etc/systemd/system/var-log-journal.mount
+  # Never --now: this is a unit systemd is still starting, for the reason
+  # carbide-kiosk-access documents at length. Both are already mounted by hand
+  # above, so there is nothing to start anyway.
   logged systemctl enable data.mount var-log-journal.mount \
     || kiosk_log "could not enable the data mount units"
 }

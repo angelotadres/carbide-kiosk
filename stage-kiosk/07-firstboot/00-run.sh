@@ -3,13 +3,21 @@ install -m 755 files/carbide-firstboot "${ROOTFS_DIR}/usr/local/sbin/carbide-fir
 install -m 644 files/carbide-firstboot.service \
 	"${ROOTFS_DIR}/etc/systemd/system/carbide-firstboot.service"
 
-# Shipped but deliberately not enabled. There is no data partition until first
-# boot creates one, and an enabled mount unit waiting on a device that does not
-# exist times out and takes local-fs.target with it. carbide-firstboot enables
-# both once the partition is real.
-install -m 644 files/data.mount "${ROOTFS_DIR}/etc/systemd/system/data.mount"
+# Staged outside every systemd unit directory, on purpose, and installed into
+# one by carbide-firstboot once the data partition exists.
+#
+# Leaving them disabled in /etc/systemd/system is not enough and 1.0.0-alpha.24
+# proved it: carbide-kiosk.service, carbide-kiosk-config.service and
+# carbide-kiosk-status.service all declare RequiresMountsFor=/data, which pulls
+# in whichever mount unit covers that path with a hard Requires - enabled or
+# not. On a first boot the partition does not exist yet, so the boot stalled
+# ninety seconds on dev-disk-by-label-CARBIDEDATA.device before giving up.
+# A unit systemd cannot see cannot be required.
+install -d -m 755 "${ROOTFS_DIR}/usr/local/share/carbide-kiosk"
+install -m 644 files/data.mount \
+	"${ROOTFS_DIR}/usr/local/share/carbide-kiosk/data.mount"
 install -m 644 files/var-log-journal.mount \
-	"${ROOTFS_DIR}/etc/systemd/system/var-log-journal.mount"
+	"${ROOTFS_DIR}/usr/local/share/carbide-kiosk/var-log-journal.mount"
 
 on_chroot << 'CHROOT'
 set -e
