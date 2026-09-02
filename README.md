@@ -10,7 +10,7 @@ The root filesystem is read-only under an overlay, so an unclean shutdown cannot
 
 It behaves like an appliance rather than a computer. File sharing is the only thing reachable over the network unless you deliberately open more, and every switch that opens something lives on the SD card — so turning anything on means holding the machine in your hands. It reports on itself instead: a plain-text `CARBIDE-STATUS.txt` appears in the share, refreshed on boot and every five minutes, saying whether Carbide Motion is running, whether the Shapeoko is detected, how much space is left, whether the power supply is sagging, and what has gone wrong recently. Open it from any Mac or PC. If you ever need a real console, plug in a keyboard and press Ctrl+Alt+F2.
 
-The full design, including the reasoning behind each choice, is in [SPEC.md](SPEC.md).
+The full design, including the reasoning behind each choice, is in [SPEC.md](SPEC.md). What is proven on real hardware right now, and on which image, is in [STATUS.md](STATUS.md) — read that first if you are picking this project up.
 
 > [!WARNING]
 > Carbide 3D supports this package on a Raspberry Pi 4 running 32-bit Raspberry Pi OS, not on a Pi 5, and has reported rendering problems with G-code files above roughly 100 MB. Those are limits of the application, not of this image. Read [the upstream constraints](SPEC.md#upstream-constraints) before committing to this hardware.
@@ -91,11 +91,21 @@ A package found in `deb/` is always preferred over anything downloaded.
 
 ```bash
 ./scripts/install-hooks.sh   # once per clone
-bats tests/                  # unit suites
+bats tests/*.bats            # unit suites
 bash tests/render-config.sh  # needs testparm and nft; CI runs it in a container
 ```
 
-The hook runs `shellcheck` and the unit suites before each commit, using local binaries or Docker, whichever is available. CI is the authoritative gate: it also renders the generated `smb.conf` and firewall ruleset through the real parsers, and resolves the whole package list against Bookworm armhf.
+`tests/machinery.sh` rewrites `/etc/fstab` and runs first-boot code as root, so it refuses to start outside a container:
+
+```bash
+docker run --rm -v "$PWD:/work" -w /work debian:bookworm bash -c \
+  'apt-get update -qq && apt-get install -y -qq systemd overlayroot \
+   && bash tests/machinery.sh'
+```
+
+The hook runs `shellcheck` and the unit suites before each commit, using local binaries or Docker, whichever is available, and checks that the documentation and the release record have not fallen behind the tags.
+
+CI is the authoritative gate. It renders the generated `smb.conf` and firewall ruleset through the real parsers, resolves the whole package list against Bookworm armhf, and runs `tests/machinery.sh`, which installs the real `overlayroot` and the real systemd and asks them what they do with this image. The job that builds a release depends on that one, so a tag that fails it produces nothing to flash.
 
 ## License
 

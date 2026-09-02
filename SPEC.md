@@ -2,6 +2,8 @@
 
 A reproducible Raspberry Pi 5 image that boots straight into Carbide Motion, exposes a Samba share for G-code transfer, and survives having its power cut mid-job.
 
+This document is the design and the reasoning behind it. It describes what the image is meant to be, not what any particular build of it turned out to do. What a clean flash has actually proved is in [STATUS.md](STATUS.md), and what each release changed is in [RELEASES.md](RELEASES.md). Nothing here should be read as a statement that the current image behaves this way.
+
 ## Goal
 
 Flash one image, drop a config file on the boot partition, power the Pi on next to a Shapeoko. It comes up in Carbide Motion on the attached display with no keyboard, no monitor-and-mouse setup step, and no writable root filesystem to corrupt. Shop machines on the LAN copy `.nc` files to a Samba share; nothing else on the box is reachable from the network.
@@ -51,6 +53,8 @@ The image ships two partitions; the third is created by the first-boot unit from
 - `/` — ext4, read-only, overlayfs with a tmpfs upper layer.
 - `/data` — ext4, label `CARBIDEDATA`, the only writable persistent storage. Mounted by `data.mount` rather than from `/etc/fstab`, because `overlayroot` rewrites every ext4 entry in `fstab` into a read-only mount under `/media/root-ro` with a tmpfs upper layer. That is right for the root filesystem and exactly wrong here, and it only rewrites `fstab`, so a mount unit is out of its reach by construction. The persistent journal is bound onto the partition the same way, by `var-log-journal.mount`.
 
+Neither mount unit is present in the image where systemd can see it. Both are staged at `/usr/local/share/carbide-kiosk/`, and `carbide-firstboot` installs them into `/etc/systemd/system/` once the partition exists and before the overlay is enabled. Shipping them into a unit directory merely disabled is not enough: `carbide-kiosk.service`, `carbide-kiosk-config.service` and `carbide-kiosk-status.service` all declare `RequiresMountsFor=/data`, and systemd resolves that to a hard `Requires=` on whichever mount unit covers the path, enabled or not. On a first boot there is no partition yet, so the boot waits on a device that does not exist. A unit systemd cannot see cannot be required.
+
 ### Boot flow
 
 ```mermaid
@@ -64,39 +68,11 @@ flowchart TD
     G --> H["smbd and nftables start"]
     H --> I[Autologin kiosk user]
     I --> J["carbide-kiosk.service, Restart always"]
-    J --> K["xinit with matchbox-window-manager running carbidemotion"]
+    J --> K["xinit with openbox running carbidemotion"]
     K -->|carbidemotion exits| J
 ```
 
 The first-boot unit disables itself before rebooting, and enabling overlayfs is the last step it takes, since everything after that point is no longer persistent. Because the overlay upper layer is tmpfs, every write to `/etc` is discarded at shutdown, so `carbide-kiosk-config.service` regenerates the Samba, nftables, udev, hostname and WiFi configuration from `kiosk.conf` on every boot rather than once at first boot.
-
-### Confirmed on hardware
-
-Verified on a Pi 5 with a 1920x1200 touch panel and a Shapeoko 5 Pro, over SSH, on 2026-08-26. Carbide Motion runs, connects to the machine and jogs it. The share accepts files from macOS and Carbide Motion can read them. The status file, the screensaver, the keyboard and SSH all work.
-
-Five things were wrong and are fixed. Carbide Motion under-declares its dependencies: it names seven Qt5 libraries and links against an eighth, `libQt5PrintSupport`, so the image needs that explicitly and CI now asks the linker rather than trusting `Depends`. The Shapeoko 5 Pro presents as USB vendor `16d0`, which no published list predicted. The kiosk account was not in the share group, so Carbide Motion could not open the very directory Samba writes to. `matchbox-window-manager` has no window layers, so no on-screen keyboard could float above the application. And the Raspberry Pi OS first-boot hook expands the root partition across the whole card, leaving nothing for the data partition.
-
-A clean flash on 2026-08-29 took the first-boot path end to end for the first time. The data partition is carved from the space the root partition leaves, formatted and mounted, and the machine disables its own first-boot unit and reboots. Three defects surfaced on that run and are fixed. The overlay verification looked for an explicit `initramfs` line in `config.txt`, which this base image does not carry because it relies on `auto_initramfs=1`, so a correctly installed overlay was reported incomplete and the machine came up with a writable root. `carbide-kiosk.service` named a `WorkingDirectory` that only `configure_samba` creates, which turns a configuration failure into a session that cannot start at all - the outcome `Wants=` rather than `Requires=` exists to prevent. And the access unit could exit without opening port 22 while `SuccessExitStatus=0 1` reported that exit as success, leaving a machine with no way in and nothing anywhere saying so.
-
-That third defect was a symptom. Chasing it found two more ways the same image locks itself out, both of which are now closed. The access unit was gated on `ConditionPathExists=/boot/firmware/kiosk.conf`, and a freshly flashed card has no `kiosk.conf` until someone copies one onto it - so on every clean flash systemd skipped the unit outright and reported the skip as success. Underneath that, the access path was a `--access-only` flag on the 450-line configuration script, which meant a syntax error anywhere in that file, on any code path, took the way in down with it.
-
-A clean flash on 2026-08-30 reached Carbide Motion unattended for the first time: the application, the floating keyboard and the session came up on their own with no desktop and no login prompt. Nothing else on that machine worked, because two units deadlocked against systemd in the same way. `carbide-kiosk-access` called `systemctl enable --now ssh`, which asks systemd to start a unit and waits, from inside a unit systemd is still starting; the wait never returned, the unit was killed at `TimeoutStartSec=90`, and `join_network` below it never ran - so a card configured for wifi and no wired fallback came up with no network, no share and no way in, having logged nothing since `opening remote access`. `carbide-kiosk-config` had the same call and a worse version of the problem: it declares `Before=ssh.service`, so ssh.service could not start until the script returned and the script would not return until ssh.service had started. Both now enable the unit and queue its start with `--no-block`, every step announces itself before running so the next hang names the call that caused it, and `tests/units.bats` refuses either form of the blocking call in either script.
-
-That run also showed the read-only root silently not happening. `raspi-config nonint enable_overlayfs` is a wrapper over the `overlayroot` package and fetches it at the moment it is asked, which is first boot - on a machine that had no network, because of the deadlock above. apt failed, raspi-config exited 0 anyway, and `overlayroot=tmpfs` went onto the kernel command line with nothing installed to act on it. The guard did not catch it: it checked that an initramfs file existed, and every image ships one, so it passed on the file the build had written twenty minutes earlier. Both packages are baked into the image now so first boot needs no network, and the guard checks that they are installed and that the initramfs really carries the overlay hook.
-
-A clean flash of `1.0.0-alpha.23` on 2026-09-01 is the first to come up with remote access working, which makes it the first run to prove the guarantee this image is built around. The machine joined WiFi with no Ethernet present, opened port 22 eleven seconds into the first boot and fifteen seconds into the second, and was reachable by key from another computer on both. Everything configuration is responsible for came up with it: the overlay root is mounted read-only over `/media/root-ro`, the boot partition is remounted `ro`, the firewall generated from `kiosk.conf` permits 22, 445 and 139 and answers ICMP under `enable_ping=1` while dropping the rest, `smbd`, `nmbd` and `avahi-daemon` are running, the share refuses unauthenticated access, and Carbide Motion reaches the panel unattended. Total startup is 17.7 seconds, of which `carbide-kiosk-access` accounts for 8.8, well inside its ninety-second budget.
-
-What that run disproved is the two-minute wait the test plan asked for. NetworkManager activated the WiFi profile fifteen seconds into the second boot and the machine held its address from that moment, but the Mac watching for it could not reach the address for a further seven minutes, because probing it while the Pi was still rebooting left a negative ARP entry on the client that outlived the reboot. The machine was healthy for the whole of that window and said so on its own console. An operator following the old timing would have declared a working image dead, which is the failure the plan exists to prevent, so the wait is now eight minutes and the symptom is named alongside it.
-
-The application half of that machine was exercised on the same day and works. The Shapeoko is detected: it enumerates as `16d0:0fa7`, the generated udev rule symlinks it to `/dev/shapeoko`, and the status file reports `Cutter: connected (/dev/ttyACM0)`. Carbide Motion's own setup was completed and the machine jogs. A file written to the share from macOS arrives as `cnc:cncshare` under a setgid share directory and is readable by the `kiosk` account the session runs as, which is the case that failed on 2026-08-26, and it reads back byte-identical.
-
-That run also found the image's most serious defect to date, and found it by accident: Finder reported 4.15 GB free on a 230 GB share. `carbide-firstboot` wrote the data partition into `/etc/fstab`, and `overlayroot` rewrites every ext4 entry there into a read-only mount under `/media/root-ro` with a tmpfs upper layer. The share therefore ran entirely in RAM. Files written to it did not survive a reboot, the 230 GB partition was mounted read-only and received nothing, Carbide Motion's settings could not persist, and the journal was volatile again. The rewrite happens in the initramfs on every boot, so reordering the `fstab` writes would not have helped; both mounts are systemd units now, which `overlayroot` never touches.
-
-The failure was invisible from inside the machine and would have stayed that way. A power-cut test against this image would have passed, because nothing persisted and so nothing could be corrupted - proof of exactly the property that did not hold.
-
-Two things on that machine remain unproven. The autologin console on Ctrl+Alt+F2 has not been tried. The power-cut resilience run has not been done, and until it passes the architecture's central claim is untested.
-
-The one capability that is not available: no keyboard can appear when a text field is focused. That needs the application to publish focus over accessibility, and Carbide Motion does not. The keyboard is summoned by hand instead.
 
 ### Kiosk session
 
@@ -185,70 +161,19 @@ carbide-kiosk/
 └── tests/                    bats suites
 ```
 
-## Tasks
+## What the automated suites can and cannot prove
 
-### Repository foundation
+CI runs `shellcheck` over every shell script, a `bats` suite per behaviour, `testparm -s` and `nft -c -f` over configuration rendered by the real generator rather than a copy of it, and an `apt-get install --simulate` of the whole package list plus Carbide Motion inside a Bookworm armhf container which then asks the linker what the binary actually needs. It also stages the repository from a clean clone, checks the package list holds only package names, checks `kiosk.conf.example` documents exactly the settings the code reads, and checks no known credential ships in the image.
 
-- [x] `git init`, MIT `LICENSE`, `.gitignore` covering `deb/*.deb`, `work/`, `deploy/` and OS litter
-- [x] `README.md`: flash, configure, boot, and the Pi 5 caveats from upstream
-- [x] `build.sh` wrapper that clones pi-gen at the pinned tag and runs `build-docker.sh`
-- [x] `build.conf` with pi-gen variables and this project's build-time settings
+That is a lot of coverage, and it is coverage of one thing: that this repository's files say what this repository intends. It is structurally incapable of covering the other thing, which is what `overlayroot`, systemd, pi-gen and the Raspberry Pi firmware do with those files once they are on a card.
 
-### Carbide Motion acquisition
+Both of the worst defects this image has had lived in that gap and shipped through a fully green suite. `carbide-firstboot` wrote a correct `fstab` line and `overlayroot` rewrote it into a tmpfs. Three services declared `RequiresMountsFor=/data` and systemd turned that into a hard dependency on a mount unit nobody had enabled. In each case the assertion available to a test that reads our own files was true, and the machine was broken.
 
-- [x] `scripts/fetch-carbide-motion.sh`: list the bucket, select the highest build, download, verify
-- [x] Honour `CARBIDE_MOTION_BUILD` to pin a specific build
-- [x] Prefer a local `.deb` in `CARBIDE_MOTION_DEB_DIR` over any network fetch
-- [x] Record and check `sha256` for whichever package is used
-- [x] Fail the build loudly when neither a local package nor a reachable bucket is available
+So the suites are joined by `tests/machinery.sh`, which reads none of our files. It builds a rootfs by running the stage scripts, installs the real `overlayroot` package and the real systemd, and asks them: `systemd --system --test` for the transaction our units resolve to, and `overlayroot`'s own `overlayrootify_fstab` function for what becomes of our `fstab`. Both defects above reproduce in it in seconds, on a laptop. Every check carries a control — a case where the machinery must produce the bad outcome — because a harness that has quietly stopped working reports success indefinitely, and that is how the second failure got past the test written for the first.
 
-### Image stage
+CI runs it as the `machinery` job, and the job that builds an image depends on it. A tag that fails it produces no release, so there is nothing to flash and nothing to remember to check.
 
-- [x] `stage-kiosk/00-base/00-packages`: Qt5 dependencies, X server, `matchbox-window-manager`, `unclutter`, `samba`, `nftables`
-- [x] `01-carbide-motion`: install the `.deb`, symlink settings into `/data`
-- [x] `02-kiosk-session`: `kiosk` user, `Xwrapper.config`, X session script, `carbide-kiosk.service`, `carbide-kiosk-config.service`
-- [x] `03-samba`: enable `smbd`/`nmbd`; `smb.conf` itself is generated each boot, no guest access
-- [x] `04-firewall`: `nftables` default-drop ruleset with the Samba exceptions
-- [x] `05-udev-cnc`: `/dev/shapeoko` symlink rule, `dialout` membership
-- [x] `06-resilience`: disable swap, systemd hardware watchdog, `/data` mount options, bounded persistent journal on `/data`
-- [x] `07-firstboot`: partition creation, overlayfs enable, self-disable
-- [x] `08-status`: status writer, timer, and the redaction that keeps secrets out of the share
-- [x] `09-boot-cmdline`: remove the Raspberry Pi OS first-boot resize hook so the card is not consumed by the root partition
-
-### Verification
-
-- [x] `shellcheck` over every shell script, failing CI
-- [x] `bats` suite for build selection: newest-wins, pin honoured, local package takes precedence, missing-source failure
-- [x] `bats` suite for `kiosk.conf` parsing: defaults, required fields, malformed input
-- [x] Dependency resolution check: `apt-get install --simulate` for the package list plus the Carbide Motion package in a Debian Bookworm armhf container
-- [x] `testparm -s` over the rendered `smb.conf`
-- [x] `nft -c -f` over the rendered ruleset
-- [x] Render-only mode on the config generator, so CI validates the real generator rather than a copy of it
-- [x] `bats` suite asserting the status writer strips configured passwords from its output
-- [x] `bats` suite refusing a blocking `systemctl` start in either boot script, and refusing an overlay the initramfs cannot actually perform
-- [x] `tests/render-config.sh`: 49 assertions over the generated share, firewall, hostname and udev rule, including that a missing library aborts before writing anything
-- [x] Pre-commit hook running `shellcheck` and the `bats` suites, so the conventions hold for any tool that writes to this repo
-
-### CI and release
-
-- [x] GitHub Actions workflow: lint and test on push, build the image on tag
-- [x] Attach the compressed `.img` and its checksum to the release
-
-### Open
-
-### Not yet verified
-
-- [x] Confirm the access unit opens port 22 before first-boot setup, so a boot that fails anywhere else is still reachable. Held on 2026-09-01, eleven seconds into the first boot and fifteen into the second.
-- [ ] Confirm the same on a card with no `kiosk.conf` and only an `authorized_keys` file, which is the case that used to lock the machine out silently. The 2026-09-01 run could not cover it: the rig has no Ethernet, so a card with no `kiosk.conf` has no network to be reachable over.
-- [x] Confirm the overlay engages, so the root is read-only and the machine tolerates losing power. Confirmed on 2026-09-01 on the booted machine rather than from the log: `/` is an overlay over `/media/root-ro` and `/boot/firmware` is mounted `ro`. That the machine then tolerates losing power is a separate test, still outstanding.
-- [ ] Confirm `agetty --autologin` accepts an account whose password field is `*`, so the physical console actually works
-- [ ] Confirm `/data` is a plain read-write mount of `LABEL=CARBIDEDATA` on the second boot and every boot after, not an overlay with a tmpfs upper. Check `df /data` reports the size of the card rather than the size of RAM, and that a file written to the share is still there after a reboot. This is what 1.0.0-alpha.23 got wrong, and the symptom is silent from inside the machine.
-
-### Hardware confirmation
-
-- [x] A clean flash reaching Carbide Motion unattended, confirmed on 2026-08-30
-- [ ] Verify Carbide Motion renders acceptably on the intended display and typical job sizes
-- [ ] Pull the power mid-job, ten times, and confirm clean boots with an intact share
+That still settles only what can be settled off the machine. A claim about the running appliance is not proven until [TESTPLAN.md](TESTPLAN.md) settles it on hardware and [STATUS.md](STATUS.md) records which image did it.
 
 ## Known risks
 

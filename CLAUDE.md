@@ -27,19 +27,40 @@ git push origin main
 git tag 1.0.0-alpha.N && git push origin 1.0.0-alpha.N
 ```
 
-The workflow builds on any tag matching `[0-9]*` and runs `gh release create` with the image and its checksum attached. Releases are at <https://github.com/angelotadres/carbide-kiosk/releases>.
+The workflow builds on any tag matching `[0-9]*` and runs `gh release create` with the image and its checksum attached. Releases are at <https://github.com/angelotadres/carbide-kiosk/releases>. The `image` job depends on `machinery`, so a tag that cannot answer for what `overlayroot` and systemd do with it never becomes something anyone can flash. That is the gate; there is no checklist to remember and nothing to tick.
+
+Then write the tag into `RELEASES.md` with a verdict, before doing anything else. The hook will stop you at the next commit if you do not, and the reason it exists is that `1.0.0-alpha.23` and `1.0.0-alpha.24` were built a day apart, produce image files with identical names, and nothing said which of them proved what.
 
 Never hand over a locally built image to flash. A local build is fine for checking that the build still works, but `deploy/` accumulates images across builds, pi-gen re-copies all of them at the end of every run so their timestamps are identical, and the filenames differ by a single digit. Pointing someone at that directory is how a two-hour session ends up testing yesterday's bits.
 
 State plainly whether a given image contains a given change, and verify it rather than assuming. The image manifest, `deploy/<date>-carbide-kiosk.info`, lists installed packages; `initramfs8` changes size when the overlay hook goes in.
 
+## Our files are not the machine
+
+A test that reads a file in this repository proves that we wrote what we meant to write. It proves nothing about what happens on the card, because between our files and the running machine sit `overlayroot`, systemd, udev, `nftables`, `raspi-config`, Samba and pi-gen, and every recent failure has been one of them doing something reasonable to a file of ours that was entirely correct.
+
+Two images died of this in one day. `1.0.0-alpha.23` wrote a good `/data` line into `/etc/fstab`; `overlayroot` rewrites every ext4 line there into a read-only mount under `/media/root-ro` with a tmpfs upper layer, and the 230 GB share ran in RAM. `1.0.0-alpha.24` shipped `data.mount` into `/etc/systemd/system/` unenabled, on the theory that an unenabled unit is inert; three services declare `RequiresMountsFor=/data`, systemd turns that into a hard `Requires=` regardless of enablement, and first boot died waiting for a partition that did not exist yet.
+
+The damning part is the test in between. After the first failure a regression suite was written, and it asserted that the mount units were "not enabled at build time". That is a true statement about our files and the wrong property entirely. It was green on the image that failed, and it made the second failure look guarded against. A test of that shape is worse than no test.
+
+So, binding:
+
+- Where a behaviour depends on third-party machinery, the test asks that machinery. Install it, hand it what the image hands it, and assert on its output. `tests/machinery.sh` does this for `overlayroot` and systemd; extend it rather than reaching for another grep.
+- Every such check carries a control that must fail — a case where the machinery is expected to produce the bad outcome. Without it a harness can quietly stop working and go on reporting success, which is exactly what happened.
+- Never assert an intermediate. "Not enabled" is an intermediate; "systemd does not require this mount" is the property. Ask what the machinery does, never what our file says it should mean.
+- `tests/machinery.sh` runs as the CI job `machinery`, and `image` lists it in `needs:`. A tag that fails it produces no image and therefore no release. Do not weaken that edge to get a build out.
+
+Both of those failures were detectable on a laptop in seconds and neither was detected. Before cutting a tag, the question is not whether the suites pass; it is which piece of somebody else's software this change hands a file to, and whether that software has been asked.
+
 ## Hardware is the only proof
 
 Anything working on a running Pi is unproven in the image until a clean flash reaches it. That gap is where this project keeps losing time, and it is invisible unless stated explicitly. Fix a problem on the machine first to confirm the fix is real, then write it into `stage-kiosk/` and commit — but never report it as fixed in the image on that basis. First-boot-path changes are the exception, because they cannot be confirmed on an already-repaired machine.
 
-`SPEC.md` carries a "Confirmed on hardware" section separating what real hardware proved from what is still untested. Update it after every hardware run, including what the run disproved.
+`STATUS.md` is the one place that answers what is proven, on which image, as of when, and it is the file to read first in this repository. `RELEASES.md` records per tag what changed, what it proved and what it regressed. Update both after every hardware run, including what the run disproved. The pre-commit hook refuses a commit when a tag has no ledger entry, when `STATUS.md` has fallen behind the newest tag, when a claim cites a test step that does not exist, or when a test step no claim cites. It cannot tell whether what you wrote is true.
 
-Prefer troubleshooting the Pi directly over relaying instructions through whoever is standing next to it. `TESTPLAN.md` is ordered by risk so a bad image is found in ten minutes rather than two hours.
+`SPEC.md` is the design and the reasoning behind it. It carries no status and no checkboxes; the hook enforces that too, because it grew five overlapping checklist sections that all went stale at different rates.
+
+Prefer troubleshooting the Pi directly over relaying instructions through whoever is standing next to it. `TESTPLAN.md` is ordered by risk so a bad image is found in ten minutes rather than two hours, and every step names the claim it settles.
 
 ## Conventions
 

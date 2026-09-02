@@ -38,11 +38,34 @@ jobs:
       - name: Install bats
         run: sudo apt-get update && sudo apt-get install -y bats
       - name: Run the unit suites
-        run: >
-          bats tests/select_build.bats tests/kiosk_conf.bats
-          tests/status_redaction.bats tests/partition_start.bats
-          tests/overlay_initramfs.bats tests/overlay_guard.bats
-          tests/units.bats tests/access.bats
+        # Globbed, never listed. The hand-maintained list this replaces had
+        # drifted behind tests/ and was not running data_partition.bats - the
+        # suite guarding the data partition - so that suite was unenforced
+        # here while claiming to be covered. A glob cannot drift.
+        run: bats tests/*.bats
+
+  machinery:
+    name: third-party behaviour
+    runs-on: ubuntu-latest
+    container:
+      image: debian:bookworm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the machinery that must be asked, not assumed
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends systemd overlayroot
+      - name: Ask systemd and overlayroot what they do with this image
+        # The suites above read this repository's own files. Both of the worst
+        # defects this image has had were true statements in our files that
+        # third-party machinery turned into a broken machine, and both shipped
+        # through a green suite. This job hands the real overlayroot and the
+        # real systemd what the image hands them and asserts on the answer.
+        env:
+          # It rewrites /etc/fstab and runs first-boot code as root, so it
+          # refuses to start anywhere it might not be thrown away afterwards.
+          CARBIDE_MACHINERY_DISPOSABLE: '1'
+        run: bash tests/machinery.sh
 
   render:
     name: generated configuration
@@ -167,7 +190,11 @@ jobs:
 
   image:
     name: build image
-    needs: [lint, unit, render, dependencies, staging]
+    # machinery is a gate, not a courtesy. A tag that cannot answer for what
+    # overlayroot and systemd do with it produces no image and therefore no
+    # release, so there is nothing for anyone to flash. This is deliberately
+    # the one step in the process a person at a keyboard cannot skip.
+    needs: [lint, unit, machinery, render, dependencies, staging]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:

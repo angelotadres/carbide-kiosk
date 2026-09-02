@@ -81,6 +81,104 @@ if [ -n "$unread" ]; then
   failed=1
 fi
 
+# --- the record keeps up with the releases --------------------------------
+#
+# Also pure shell, so it always runs. These exist because the prose
+# conventions they replace were missed: 1.0.0-alpha.23 and 1.0.0-alpha.24 were
+# built a day apart, ship image files with identical names, and nothing in the
+# repository said which one proved what. A convention that is not checked is
+# a convention that holds until the evening it matters.
+#
+# None of this can tell whether an entry is true. It can only refuse a commit
+# that leaves the record obviously incomplete.
+
+doc_fail() {
+  printf 'pre-commit: %s\n' "$1" >&2
+  failed=1
+}
+
+tags="$(git tag)"
+newest_tag="$(git tag --sort=-creatordate | head -1)"
+
+# Every tag has a ledger entry. The boundary characters matter: a plain grep
+# for 1.0.0-alpha.2 matches 1.0.0-alpha.23 and passes on the wrong release.
+for tag in $tags; do
+  esc="$(printf '%s' "$tag" | sed 's/\./\\./g')"
+  grep -qE "(^|[^0-9.])${esc}([^0-9]|\$)" RELEASES.md \
+    || doc_fail "released but not in RELEASES.md: $tag"
+done
+
+# The newest one gets a full entry, not just a mention in the recovered list.
+if [ -n "$newest_tag" ]; then
+  esc="$(printf '%s' "$newest_tag" | sed 's/\./\\./g')"
+  grep -qE "^## ${esc}( |\$)" RELEASES.md \
+    || doc_fail "newest release has no RELEASES.md entry: $newest_tag"
+  grep -qE "(^|[^0-9.])${esc}([^0-9]|\$)" STATUS.md \
+    || doc_fail "STATUS.md does not mention the newest release: $newest_tag"
+fi
+
+# Each entry says what changed, what it proved and what it regressed. Leaving
+# "Regressed" out is how a release stops being a record of anything, and
+# "Proved: nothing" is a real answer that has to be written down rather than
+# left out.
+thin_entry="$(awk '
+  BEGIN { split("Verdict:|- Changed:|- Proved:|- Regressed:", want, "|") }
+  function close_entry() {
+    if (tag == "") return
+    for (i in want) if (!(want[i] in seen)) print tag " has no \"" want[i] "\""
+    delete seen; tag = ""
+  }
+  /^## / { close_entry(); if ($2 ~ /^[0-9]+\./) tag = $2; next }
+  tag != "" { for (i in want) if (index($0, want[i]) > 0) seen[want[i]] = 1 }
+  END { close_entry() }
+' RELEASES.md)"
+[ -n "$thin_entry" ] && doc_fail "RELEASES.md entries are incomplete:
+$thin_entry"
+
+# The proven-state table uses the four defined states and names a real image.
+# "repaired only" is the one that matters: it is the distinction between a
+# machine someone fixed by hand and an image that came up working, and the
+# old prose kept losing it.
+# Space separated, not newline separated: the awk on macOS refuses a newline
+# inside a -v value and the whole check silently stopped running.
+bad_rows="$(awk -F'|' -v taglist="$(echo $tags)" '
+  BEGIN { n = split(taglist, a, " "); for (i = 1; i <= n; i++) if (a[i] != "") tag[a[i]] = 1 }
+  /^\|/ {
+    state = $3; image = $4;
+    gsub(/^[ \t]+|[ \t]+$/, "", state); gsub(/^[ \t]+|[ \t]+$/, "", image);
+    if (state == "" || state == "State" || state ~ /^-+$/) next;
+    if (state !~ /^(proven|broken|unproven|repaired only)$/)
+      print "  unknown state: " state;
+    else if (!(image in tag) && image != "unrecorded" && image != "—")
+      print "  image is not a released tag: " image;
+  }
+' STATUS.md)"
+[ -n "$bad_rows" ] && doc_fail "STATUS.md:
+$bad_rows"
+
+# Every test step is claimed by the state table and every claimed step exists.
+# A step nobody cites proves nothing; a citation with no step is a claim with
+# no procedure behind it.
+plan_steps="$(grep -oE '^## T[0-9]+\.' TESTPLAN.md | tr -d '#. ' | sort -u)"
+status_steps="$(grep -oE '\bT[0-9]+\b' STATUS.md | sort -u)"
+missing_step="$(comm -13 <(printf '%s\n' "$plan_steps") <(printf '%s\n' "$status_steps"))"
+uncited_step="$(comm -23 <(printf '%s\n' "$plan_steps") <(printf '%s\n' "$status_steps"))"
+[ -n "$missing_step" ] && doc_fail "STATUS.md cites steps TESTPLAN.md does not define: $missing_step"
+[ -n "$uncited_step" ] && doc_fail "TESTPLAN.md steps no claim in STATUS.md cites: $uncited_step"
+
+# Every step says what it proves, so a pass means something specific.
+silent_step="$(awk '
+  /^## T[0-9]+\./ { if (step != "" && !proves) print step; step = $2; proves = 0; next }
+  /^## / { if (step != "" && !proves) print step; step = ""; proves = 0; next }
+  /^\*\*Proves:\*\*/ { proves = 1 }
+  END { if (step != "" && !proves) print step }
+' TESTPLAN.md)"
+[ -n "$silent_step" ] && doc_fail "TESTPLAN.md steps that do not say what they prove: $silent_step"
+
+# Status belongs in STATUS.md. SPEC.md is the design and has no checkboxes to
+# go stale; it grew five overlapping checklist sections before this rule.
+grep -qE '^- \[[ x]\]' SPEC.md && doc_fail 'SPEC.md has checkboxes; status lives in STATUS.md'
+
 if [ "$ran" -eq 0 ]; then
   printf 'pre-commit: no checks could run. Install shellcheck and bats, or\n' >&2
   printf 'pre-commit: start Docker, so this hook is worth having.\n' >&2
