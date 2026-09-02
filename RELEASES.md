@@ -8,6 +8,16 @@ Every entry says four things. Verdict is whether the image is safe to flash. Cha
 
 Current state, rather than history, is in [STATUS.md](STATUS.md).
 
+## 1.0.0-alpha.26 — 2026-09-01
+
+Not yet flashed. Verdict: unproven. Identical image code to `1.0.0-alpha.25`; it exists so the gate runs on a runner rather than on someone's laptop.
+
+- Changed: nothing under `stage-kiosk/`. `git diff 1.0.0-alpha.25 1.0.0-alpha.26 -- stage-kiosk/` is empty by construction. What is new is `tests/machinery.sh`, the `machinery` CI job that `image` now depends on, and the restructured documents.
+- Proved: nothing on hardware. It is the first tag whose image cannot exist unless the real `overlayroot` and the real systemd were asked what they do with it.
+- Regressed: unknown. Not flashed.
+
+`1.0.0-alpha.25` was cut before the gate existed, so CI never ran `machinery` for it. The harness was run locally against that tag's `stage-kiosk/`, which is byte-identical to this one's, and passed. This tag makes that a CI fact rather than a claim.
+
 ## 1.0.0-alpha.25 — 2026-09-01
 
 Not yet flashed. Verdict: unproven. It is the candidate fix for `1.0.0-alpha.24` and nothing has been on hardware.
