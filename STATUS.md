@@ -25,7 +25,7 @@ Both failures were mechanically detectable on a laptop, with no hardware, and ne
 
 ## Where things stand
 
-The newest release is `1.0.0-alpha.26`, tagged 2026-09-01. It has not been flashed. Its image code is identical to `1.0.0-alpha.25` — the candidate fix for the `1.0.0-alpha.24` first-boot failure — and it was re-tagged only so the `machinery` gate runs in CI rather than on a laptop. Nothing about it is proven on hardware.
+The newest release is `1.0.0-alpha.27`, tagged 2026-09-02. It has not been flashed. Its image code is identical to `1.0.0-alpha.25` — the candidate fix for the `1.0.0-alpha.24` first-boot failure — and it was re-tagged only so the `machinery` gate runs in CI rather than on a laptop. Nothing about it is proven on hardware.
 
 `1.0.0-alpha.24` does not boot. Three services declare `RequiresMountsFor=/data`, which pulled in a mount unit for a partition that did not exist yet; the boot stalled ninety seconds on the device, and on a card that had been flashed before, the pending mount then grabbed the new partition out from under `mkfs.ext4`, which refused and killed setup.
 
@@ -33,13 +33,13 @@ The last image that booted is `1.0.0-alpha.23`, flashed 2026-09-01. It is the fi
 
 ## Broken right now
 
-There is no image anyone should flash for real use. `1.0.0-alpha.24` does not complete first boot, `1.0.0-alpha.23` silently loses every file written to the share, and `1.0.0-alpha.26` is untested.
+There is no image anyone should flash for real use. `1.0.0-alpha.24` does not complete first boot, `1.0.0-alpha.23` silently loses every file written to the share, and `1.0.0-alpha.27` is untested.
 
 The persistent journal lives on `/data`, so it went into RAM alongside the share on `1.0.0-alpha.23`. Nothing has confirmed it comes back when `/data` does.
 
 ## In flight
 
-`1.0.0-alpha.26` is tagged and waiting for a clean flash. It is the candidate fix for the first-boot failure and nothing else.
+`1.0.0-alpha.27` is tagged and waiting for a clean flash. `1.0.0-alpha.26` was rejected by the gate before producing an image. It is the candidate fix for the first-boot failure and nothing else.
 
 `tests/machinery.sh`, the `machinery` CI job, this file and `RELEASES.md` are committed. They were written after `1.0.0-alpha.25` was cut, so CI never ran the gate for that tag; `1.0.0-alpha.26` is the first release the gate actually stands in front of.
 
@@ -48,7 +48,7 @@ The persistent journal lives on `/data`, so it went into RAM alongside the share
 
 ## What to do next
 
-1. Confirm CI is green on `1.0.0-alpha.26`, including the `machinery` job, and take the image from that release rather than from `deploy/`. Both alpha.23 and alpha.24 produced image files with identical names, so check the SHA256 against the release before flashing.
+1. Confirm CI is green on `1.0.0-alpha.27`, including the `machinery` job, and take the image from that release rather than from `deploy/`. Both alpha.23 and alpha.24 produced image files with identical names, so check the SHA256 against the release before flashing.
 2. Flash it on a card that has been flashed before — a virgin card cannot reproduce the `1.0.0-alpha.24` failure, because flashing only rewrites the first few gigabytes and the stale `CARBIDEDATA` filesystem further out is half of what broke it.
 3. Work [TESTPLAN.md](TESTPLAN.md) in order, stopping at the first failure. Steps T4 and T6 are the ones that catch the `1.0.0-alpha.23` defect, and T4 costs one command.
 4. Record the outcome in [RELEASES.md](RELEASES.md) and update the table below, including what the run disproved.

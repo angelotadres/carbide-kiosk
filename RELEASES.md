@@ -8,15 +8,27 @@ Every entry says four things. Verdict is whether the image is safe to flash. Cha
 
 Current state, rather than history, is in [STATUS.md](STATUS.md).
 
+## 1.0.0-alpha.27 — 2026-09-02
+
+Not yet flashed. Verdict: unproven. Identical image code to `1.0.0-alpha.25` and `1.0.0-alpha.26`; it exists because `1.0.0-alpha.26` could not get past its own gate.
+
+- Changed: nothing under `stage-kiosk/`. Two fixes to `tests/machinery.sh` itself. It created a placeholder for the proprietary `.deb` but not the directory holding it, which is untracked because git carries no empty directories — so it worked on a machine where a previous build had left that directory behind and failed on a clean checkout. And its linter suppression named only `SC2329`, the code newer shellcheck uses; the CI runner's 0.9.0 calls the same finding `SC2317` and failed the lint job.
+- Proved: nothing on hardware. It is the first tag whose image can only exist if the real `overlayroot` and the real systemd were asked what they do with it.
+- Regressed: unknown. Not flashed.
+
+Verified before tagging against a pristine `git archive` export rather than the working tree, in CI's own container: the harness passes, reintroducing either shipped defect makes it fail, and shellcheck 0.9.0 is clean over CI's exact file set.
+
 ## 1.0.0-alpha.26 — 2026-09-01
 
-Not yet flashed. Verdict: unproven. Identical image code to `1.0.0-alpha.25`; it exists so the gate runs on a runner rather than on someone's laptop.
+Never built. Verdict: rejected by its own gate, which is the gate working. Identical image code to `1.0.0-alpha.25`; it existed so the gate would run on a runner rather than on someone's laptop.
 
 - Changed: nothing under `stage-kiosk/`. `git diff 1.0.0-alpha.25 1.0.0-alpha.26 -- stage-kiosk/` is empty by construction. What is new is `tests/machinery.sh`, the `machinery` CI job that `image` now depends on, and the restructured documents.
 - Proved: nothing on hardware. It is the first tag whose image cannot exist unless the real `overlayroot` and the real systemd were asked what they do with it.
 - Regressed: unknown. Not flashed.
 
-`1.0.0-alpha.25` was cut before the gate existed, so CI never ran `machinery` for it. The harness was run locally against that tag's `stage-kiosk/`, which is byte-identical to this one's, and passed. This tag makes that a CI fact rather than a claim.
+`1.0.0-alpha.25` was cut before the gate existed, so CI never ran `machinery` for it. The harness was run locally against that tag's `stage-kiosk/`, which is byte-identical to this one's, and passed.
+
+Then the gate rejected this tag. The `machinery` job failed because the harness could not run on a clean checkout, and `shellcheck` failed on a suppression code that only newer shellcheck uses. `image` lists both in `needs:`, so no image was built and there is nothing to flash — which is the designed behaviour and the first time it has been exercised. The harness had only ever been run on a working tree that a previous build had furnished; the first thing it caught was itself.
 
 ## 1.0.0-alpha.25 — 2026-09-01
 

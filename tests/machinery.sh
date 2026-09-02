@@ -94,7 +94,12 @@ build_rootfs() {
   : > "$ENABLED"
   cp -a "$REPO_ROOT/stage-kiosk" "$WORK/stage-kiosk"
   # Proprietary, fetched at build time, never committed. Its content is
-  # irrelevant to every question this script asks.
+  # irrelevant to every question this script asks - but the directory holding
+  # it is not tracked either, because git does not carry empty directories and
+  # everything in it is ignored. On a developer's machine a previous build has
+  # left it lying around and this works; on a clean checkout it does not, which
+  # is how this harness failed its own first CI run.
+  mkdir -p "$WORK/stage-kiosk/01-carbide-motion/files"
   : > "$WORK/stage-kiosk/01-carbide-motion/files/carbidemotion.deb"
 
   local stage
@@ -103,7 +108,13 @@ build_rootfs() {
       cd "$(dirname "$stage")" || exit 1
       export ROOTFS_DIR="$ROOTFS"
       export CAPTURE="$ENABLED"
-      # shellcheck disable=SC2329  # invoked by the stage scripts, via export -f
+      # Invoked by the stage scripts through export -f, which the linter cannot
+      # see. Both codes are listed because 0.9.0 on the CI runner reports this
+      # as SC2317 and newer builds report it as SC2329; suppressing only the
+      # one your local copy emits is how this failed CI while passing here.
+      # No line of this comment may begin with the linter's own name, or it is
+      # parsed as a directive and the file stops parsing altogether.
+      # shellcheck disable=SC2317,SC2329
       on_chroot() { cat >> "$CAPTURE"; }
       export -f on_chroot
       bash -e "./$(basename "$stage")"
