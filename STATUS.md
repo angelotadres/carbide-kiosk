@@ -25,7 +25,7 @@ Both failures were mechanically detectable on a laptop, with no hardware, and ne
 
 ## Where things stand
 
-The newest release is `1.0.0-alpha.27`, tagged 2026-09-02, and it is the first image where a clean flash leaves a working machine. Storage persists, the read-only root holds, remote access works, and the cutter is driven from the panel. Its image code is identical to `1.0.0-alpha.25` — the candidate fix for the `1.0.0-alpha.24` first-boot failure — and it was re-tagged only so the `machinery` gate runs in CI rather than on a laptop. Nothing about it is proven on hardware.
+The newest release is `1.0.0-beta.1`, tagged 2026-09-02. `1.0.0-alpha.27` is the image that earned it: the first where a clean flash left a working machine, and the first to cut a real piece. Storage persists, the read-only root holds, remote access works, and the cutter is driven from the panel. Its image code is identical to `1.0.0-alpha.25` — the candidate fix for the `1.0.0-alpha.24` first-boot failure — and it was re-tagged only so the `machinery` gate runs in CI rather than on a laptop. Nothing about it is proven on hardware.
 
 `1.0.0-alpha.24` does not boot. Three services declare `RequiresMountsFor=/data`, which pulled in a mount unit for a partition that did not exist yet; the boot stalled ninety seconds on the device, and on a card that had been flashed before, the pending mount then grabbed the new partition out from under `mkfs.ext4`, which refused and killed setup.
 
@@ -85,7 +85,8 @@ Each row is one claim, the state of that claim, the image that settled it and wh
 | The SSH host key survives a reboot | proven | 1.0.0-alpha.27 | 2026-09-01 | T6 |
 | A short press on the power button shuts the machine down | broken | 1.0.0-alpha.27 | 2026-09-01 | T3 |
 | A changed `kiosk.conf` takes effect on the next boot | unproven | — | — | T10 |
-| Rendering holds up on real job sizes | unproven | — | — | T11 |
+| Carbide Motion loads a job and cuts it | proven | 1.0.0-alpha.27 | 2026-09-01 | T11 |
+| Rendering holds up on large jobs (~100 MB) | unproven | — | — | T11 |
 
 An `unrecorded` image means a flash happened on that date and nobody wrote down which tag was on the card. That is the gap [RELEASES.md](RELEASES.md) exists to close, and the two entries above it are the only ones left.
 
