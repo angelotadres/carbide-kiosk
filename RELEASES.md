@@ -13,8 +13,9 @@ Current state, rather than history, is in [STATUS.md](STATUS.md).
 Not yet flashed. Verdict: unproven. Identical image code to `1.0.0-alpha.25` and `1.0.0-alpha.26`; it exists because `1.0.0-alpha.26` could not get past its own gate.
 
 - Changed: nothing under `stage-kiosk/`. Two fixes to `tests/machinery.sh` itself. It created a placeholder for the proprietary `.deb` but not the directory holding it, which is untracked because git carries no empty directories — so it worked on a machine where a previous build had left that directory behind and failed on a clean checkout. And its linter suppression named only `SC2329`, the code newer shellcheck uses; the CI runner's 0.9.0 calls the same finding `SC2317` and failed the lint job.
-- Proved: nothing on hardware. It is the first tag whose image can only exist if the real `overlayroot` and the real systemd were asked what they do with it.
+- Proved: nothing on hardware. It is the first tag whose image could only exist because the real `overlayroot` and the real systemd were asked what they do with it, and CI ran that gate green before building anything. `1.0.0-alpha.26` is the proof the gate bites: it produced no release at all.
 - Regressed: unknown. Not flashed.
+- Image: `image_2026-09-02-carbide-kiosk.img.xz`, 726059748 bytes, sha256 `b6a6573e0cd45437d40492b7af84d8fc0a477b8a5ffc95f1d1c27e07e68fc35c`
 
 Verified before tagging against a pristine `git archive` export rather than the working tree, in CI's own container: the harness passes, reintroducing either shipped defect makes it fail, and shellcheck 0.9.0 is clean over CI's exact file set.
 
@@ -37,6 +38,7 @@ Not yet flashed. Verdict: unproven. It is the candidate fix for `1.0.0-alpha.24`
 - Changed: `data.mount` and `var-log-journal.mount` are staged at `/usr/local/share/carbide-kiosk/`, outside every directory systemd searches, and `carbide-firstboot` installs them into `/etc/systemd/system/` after the partition exists and before the overlay is enabled. `create_data_partition` now unmounts and `wipefs` the new partition before `mkfs`, so a stale `CARBIDEDATA` signature left by a previous flash cannot be claimed out from under it.
 - Proved: nothing. Not flashed.
 - Regressed: unknown. Not flashed.
+- Image: `image_2026-09-02-carbide-kiosk.img.xz`, 727154428 bytes, sha256 `9daecb429963ee93`
 
 `tests/machinery.sh` was written after this tag was cut and reproduces both of the failures below offline, so it did not gate this release. It gates the next one.
 
@@ -47,6 +49,7 @@ Flashed 2026-09-01. Verdict: broken, do not flash.
 - Changed: moved `/data` and the journal bind out of `/etc/fstab` into `data.mount` and `var-log-journal.mount`, shipped into `/etc/systemd/system/` deliberately not enabled, with `carbide-firstboot` enabling them once the partition existed. Made the pre-commit hook glob `tests/*.bats` rather than run a hand-maintained list that had drifted three suites behind.
 - Proved: nothing. First boot never completed, so nothing downstream of it was exercised.
 - Regressed: first boot, entirely. The reasoning that an unenabled unit is inert was wrong. `carbide-kiosk.service`, `carbide-kiosk-config.service` and `carbide-kiosk-status.service` all declare `RequiresMountsFor=/data`, and systemd resolves that to a hard `Requires=` on whichever mount unit covers the path regardless of enablement. First boot stalled ninety seconds on `dev-disk-by-label-CARBIDEDATA.device`; `parted` then created the partition at the same offset where a previous flash had left a `CARBIDEDATA` filesystem, because flashing only rewrites the first few gigabytes of the card; the pending mount job fired and mounted it; and `mkfs.ext4` refused with "is mounted; will not make a filesystem here". Setup exited 1 and the machine came up with no share and no status file.
+- Image: `image_2026-09-01-carbide-kiosk.img.xz`, 727804440 bytes, sha256 `59a5c49c70446b06d91721a8f0c50f8e37221fcb5c2e9f3076d3790efa4035cf`
 
 The suite written for the `1.0.0-alpha.23` fix asserted that the mount units were not enabled at build time. That is not the property that mattered, and asserting it made the failure look tested for. The suite was green.
 
@@ -57,6 +60,7 @@ Flashed 2026-09-01. Verdict: boots and is reachable, but loses every file writte
 - Changed: the access script now says why the wifi join failed rather than only that it did, and keeps saying it after first boot.
 - Proved: remote access, for the first time in this project's history. The machine joined wifi with no Ethernet present, opened port 22 eleven seconds into the first boot and fifteen seconds into the second, and accepted a key from another computer on both. The overlay root is mounted read-only over `/media/root-ro` and `/boot/firmware` is remounted `ro`. The generated firewall permits 22, 445 and 139 and answers ICMP under `enable_ping=1` while dropping the rest. `smbd`, `nmbd` and `avahi-daemon` run, the share refuses unauthenticated access, and a file written from macOS arrives as `cnc:cncshare` under a setgid directory, readable by the `kiosk` account, and reads back byte-identical. Carbide Motion reaches the panel unattended, the Shapeoko enumerates as `16d0:0fa7` and is symlinked to `/dev/shapeoko`, the status file reports `Cutter: connected (/dev/ttyACM0)`, and the machine jogs. Total startup is 17.7 seconds, of which `carbide-kiosk-access` accounts for 8.8, well inside its ninety-second budget.
 - Regressed: nothing new, but the run exposed the most serious defect the image has had. `carbide-firstboot` wrote the data partition into `/etc/fstab`, and `overlayroot` rewrites every ext4 entry there, in the initramfs on every boot, into a read-only mount under `/media/root-ro` with a tmpfs upper layer. The 230 GB partition was mounted read-only and received nothing while the Samba share ran entirely in RAM. Files did not survive a reboot, Carbide Motion's settings could not persist, and the journal was volatile again. It was found by accident: Finder reported 4.15 GB free on a 230 GB share.
+- Image: `image_2026-09-01-carbide-kiosk.img.xz`, 728164020 bytes, sha256 `2253afe77f5641623fe9f1b13eb80f2dc92cf9c3f3d6b4b56351003834e48224`
 
 This run also disproved the two-minute wait the test plan asked for. NetworkManager activated the wifi profile fifteen seconds into the second boot and the machine held its address from that moment, but the Mac could not reach it for a further seven minutes, because probing the address while the Pi was still rebooting left a negative ARP entry on the client that outlived the reboot. An operator following the old timing would have declared a healthy image dead. The wait is eight minutes now and the symptom is named alongside it.
 
